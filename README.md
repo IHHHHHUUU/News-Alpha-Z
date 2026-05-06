@@ -26,8 +26,6 @@ This project uses a safer design:
 
 Method anchors:
 
-- [Generalized Stock Price Prediction for Multiple Stocks Combined with News Fusion](https://arxiv.org/abs/2603.19286):
-  stock/company-aware attention over pretrained news representations.
 - [Exploring the Synergy of Quantitative Factors and Newsflow Representations](https://arxiv.org/abs/2510.15691):
   factor-only branch, factor-news fusion branch, mixture gate, and decoupled training.
 - [FNSPID](https://arxiv.org/abs/2402.06698) and
@@ -133,24 +131,6 @@ attention entropy, and top-attention chunk case studies.
 - B3: stock-aware chunk attention.
 - B4: conventional mixture training.
 - B5: decoupled training, the final method.
-
-## Results
-
-This repository does not include raw data, downloaded models, embeddings, predictions, or backtest outputs. The report
-templates in `reports/` define the expected result tables and plots for the first real run.
-
-## Attention Case Study
-
-The diagnostics module joins saved attention weights back to chunk text, making it possible to inspect the highest-weight
-chunks for a stock-day. This is meant to test whether the model is attending to economically relevant full-text passages
-rather than boilerplate, repeated background, or unrelated company mentions.
-
-## Limitations
-
-- This is an interface-complete first version, not a completed empirical study.
-- Real FNSPID field names may require a small column map update after the files are placed locally.
-- The frozen transformer encoder requires optional `torch` and `transformers` dependencies.
-- No live trading, order generation, or portfolio execution layer is included.
 
 ## How to Reproduce
 
