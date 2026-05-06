@@ -1,0 +1,1 @@
+"""Offline text embedding interfaces."""

@@ -1,0 +1,12 @@
+news:
+  encoder: ProsusAI/finbert
+  encoder_frozen: true
+  local_files_only: true
+  chunk_max_length: 256
+  max_chunks_per_stock_day: 64
+
+model:
+  chunk_embedding_dim: 768
+  stock_embedding_dim: 64
+  full_text_news_repr_dim: 64
+  train_encoder_end_to_end: false

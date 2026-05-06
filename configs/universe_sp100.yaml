@@ -1,0 +1,6 @@
+universe:
+  name: sp100_or_fnspid_top_coverage
+  selection_rule: top_100_by_fnspid_news_coverage
+  fallback: S&P100 tickers from local user-supplied universe file
+  ticker_column: ticker
+  company_column: company_name

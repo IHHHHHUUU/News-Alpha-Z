@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fulltext-news-alpha"
+version = "0.1.0"
+description = "Full-text financial news alpha research pipeline with chunk-attentive representations and RAM-style decoupled gating."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "News-Alpha-Z" }]
+license = { text = "MIT" }
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "pyarrow>=12",
+  "PyYAML>=6",
+  "scipy>=1.10",
+  "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+text = ["torch>=2.1", "transformers>=4.38"]
+prices = ["yfinance>=0.2"]
+dev = ["pytest>=7.4", "ruff>=0.4"]
+
+[project.scripts]
+news-alpha-build-panel = "fulltext_news_alpha.data.build_stock_day_panel:main"
+news-alpha-chunk-news = "fulltext_news_alpha.preprocessing.chunk_news:main"
+news-alpha-encode-chunks = "fulltext_news_alpha.embeddings.encode_chunks:main"
+news-alpha-evaluate = "fulltext_news_alpha.evaluation.plots:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

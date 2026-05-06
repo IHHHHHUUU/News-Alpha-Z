@@ -1,0 +1,45 @@
+project:
+  name: News-Alpha-Z
+  package: fulltext_news_alpha
+  seed: 42
+
+data:
+  raw_dir: data/raw
+  interim_dir: data/interim
+  processed_dir: data/processed
+  embeddings_dir: data/embeddings
+  predictions_dir: data/predictions
+  factors_dir: data/factors
+  reports_dir: data/reports
+  universe_size: 100
+  train_start: "2018-01-01"
+  train_end: "2020-12-31"
+  validation_start: "2021-01-01"
+  validation_end: "2021-12-31"
+  test_start: "2022-01-01"
+  test_end: "2023-12-31"
+  market_close_time: "16:00"
+  timezone: America/New_York
+
+news:
+  encoder: ProsusAI/finbert
+  encoder_frozen: true
+  chunk_max_length: 256
+  max_chunks_per_stock_day: 64
+  overlap_tokens: 0
+  local_files_only: true
+
+labels:
+  main: future_20d_market_adjusted_return
+  auxiliary: future_5d_market_adjusted_return
+
+model:
+  factor_hidden_dim: 128
+  attention_hidden_dim: 128
+  news_repr_dim: 64
+  gate_temperature: 1.0
+
+evaluation:
+  factor_col: FullTextNewsAlpha_zscore
+  return_col: future_20d_market_adjusted_return
+  rankic_windows: [20, 60, 120]
