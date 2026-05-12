@@ -4,8 +4,5 @@ pyarrow>=12
 PyYAML>=6
 scipy>=1.10
 matplotlib>=3.7
-
-# Optional runtime extras:
-# torch>=2.1
-# transformers>=4.38
-# yfinance>=0.2
+transformers>=4.38
+yfinance>=0.2

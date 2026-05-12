@@ -22,6 +22,9 @@ data/predictions/**
 data/factors/**
 data/reports/**
 !data/**/.gitkeep
+models/**
+!models/**/
+!models/**/.gitkeep
 
 # Large model/checkpoint artifacts
 *.ckpt

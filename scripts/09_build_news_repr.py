@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from fulltext_news_alpha.data.build_stock_day_panel import main
+from fulltext_news_alpha.features.build_news_repr import main
 
 
 if __name__ == "__main__":
