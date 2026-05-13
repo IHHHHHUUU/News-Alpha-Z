@@ -1,0 +1,21 @@
+{"time":"2026-05-13T18:10:17.154785525+08:00","level":"INFO","msg":"wandb-core"}
+{"time":"2026-05-13T18:10:17.155245999+08:00","level":"INFO","msg":"stream: starting","core version":"0.26.1"}
+{"time":"2026-05-13T18:10:18.783824066+08:00","level":"INFO","msg":"stream: created new stream","id":"yn0jwerr"}
+{"time":"2026-05-13T18:10:18.783906265+08:00","level":"INFO","msg":"handler: started"}
+{"time":"2026-05-13T18:10:18.784060532+08:00","level":"INFO","msg":"stream: started"}
+{"time":"2026-05-13T18:10:18.784097342+08:00","level":"INFO","msg":"writer: started","stream_id":"yn0jwerr"}
+{"time":"2026-05-13T18:10:18.784118712+08:00","level":"INFO","msg":"sender: started"}
+{"time":"2026-05-13T18:10:22.267602439+08:00","level":"INFO","msg":"filestream: sending request","total_files":1}
+{"time":"2026-05-13T18:10:23.259863148+08:00","level":"INFO","msg":"filestream: request sent","status":"200 OK"}
+{"time":"2026-05-13T18:10:37.268341557+08:00","level":"INFO","msg":"filestream: sending request","total_files":3,"history_offset":0,"history_lines":10,"events_offset":0,"events_lines":2}
+{"time":"2026-05-13T18:10:37.797201764+08:00","level":"INFO","msg":"filestream: request sent","status":"200 OK"}
+{"time":"2026-05-13T18:10:52.268260945+08:00","level":"INFO","msg":"filestream: sending request","total_files":3,"history_offset":10,"history_lines":33,"events_offset":2,"events_lines":2}
+{"time":"2026-05-13T18:10:52.916359354+08:00","level":"INFO","msg":"filestream: request sent","status":"200 OK"}
+{"time":"2026-05-13T18:10:54.905547573+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-05-13T18:10:54.905665251+08:00","level":"INFO","msg":"filestream: sending request","total_files":0,"uploaded_len":4,"complete":true,"exit_code":0}
+{"time":"2026-05-13T18:10:55.375846184+08:00","level":"INFO","msg":"filestream: request sent","status":"200 OK"}
+{"time":"2026-05-13T18:10:55.377861076+08:00","level":"INFO","msg":"handler: operation stats","stats":{}}
+{"time":"2026-05-13T18:10:55.382372074+08:00","level":"INFO","msg":"stream: finishing up"}
+{"time":"2026-05-13T18:10:55.382400664+08:00","level":"INFO","msg":"handler: closed"}
+{"time":"2026-05-13T18:10:55.382482023+08:00","level":"INFO","msg":"sender: closed"}
+{"time":"2026-05-13T18:10:55.382490802+08:00","level":"INFO","msg":"stream: all finished"}

@@ -59,24 +59,34 @@ def next_trading_day(anchor: date | pd.Timestamp, trading_days: pd.DatetimeIndex
     """Find the first trading day strictly after ``anchor``."""
 
     days = normalize_trading_days(trading_days)
-    anchor_date = _to_timestamp(anchor).date()
-    for day_value in days:
-        day = _to_timestamp(day_value)
-        if day.date() > anchor_date:
-            return day
-    raise ValueError(f"No trading day available after {anchor_date}")
+    return _next_trading_day_in_calendar(anchor, days)
+
+
+def _next_trading_day_in_calendar(anchor: date | pd.Timestamp, days: pd.DatetimeIndex) -> pd.Timestamp:
+    """Find the first trading day strictly after ``anchor`` in a normalized calendar."""
+
+    anchor_ts = _to_timestamp(anchor.date() if isinstance(anchor, pd.Timestamp) else anchor)
+    idx = cast(int, days.searchsorted(anchor_ts, side="right"))
+    if idx >= len(days):
+        raise ValueError(f"No trading day available after {anchor_ts.date()}")
+    return _to_timestamp(days[idx])
 
 
 def current_or_next_trading_day(anchor: date | pd.Timestamp, trading_days: pd.DatetimeIndex) -> pd.Timestamp:
     """Find the first trading day on or after ``anchor``."""
 
     days = normalize_trading_days(trading_days)
-    anchor_date = _to_timestamp(anchor).date()
-    for day_value in days:
-        day = _to_timestamp(day_value)
-        if day.date() >= anchor_date:
-            return day
-    raise ValueError(f"No trading day available on or after {anchor_date}")
+    return _current_or_next_trading_day_in_calendar(anchor, days)
+
+
+def _current_or_next_trading_day_in_calendar(anchor: date | pd.Timestamp, days: pd.DatetimeIndex) -> pd.Timestamp:
+    """Find the first trading day on or after ``anchor`` in a normalized calendar."""
+
+    anchor_ts = _to_timestamp(anchor.date() if isinstance(anchor, pd.Timestamp) else anchor)
+    idx = cast(int, days.searchsorted(anchor_ts, side="left"))
+    if idx >= len(days):
+        raise ValueError(f"No trading day available on or after {anchor_ts.date()}")
+    return _to_timestamp(days[idx])
 
 
 def assign_signal_date(
@@ -95,20 +105,31 @@ def assign_signal_date(
     """
 
     days = normalize_trading_days(trading_days)
+    return assign_signal_date_from_calendar(publish_time, days, market_close=market_close)
+
+
+def assign_signal_date_from_calendar(
+    publish_time: object,
+    trading_days: pd.DatetimeIndex,
+    market_close: time = time(16, 0),
+) -> date:
+    """Map a publish timestamp using a pre-normalized trading calendar."""
+
+    days = trading_days
     imprecise_date = imprecise_publish_date(publish_time)
     if imprecise_date is not None:
-        return next_trading_day(imprecise_date, days).date()
+        return _next_trading_day_in_calendar(imprecise_date, days).date()
 
     ts = to_new_york_timestamp(publish_time)
     publish_date = _to_timestamp(ts.date())
     if _timestamp_at_midnight(ts):
-        return next_trading_day(publish_date, days).date()
+        return _next_trading_day_in_calendar(publish_date, days).date()
 
     if publish_date in days and ts.time() < market_close:
         return publish_date.date()
     if publish_date in days:
-        return next_trading_day(publish_date, days).date()
-    return current_or_next_trading_day(publish_date, days).date()
+        return _next_trading_day_in_calendar(publish_date, days).date()
+    return _current_or_next_trading_day_in_calendar(publish_date, days).date()
 
 
 def add_signal_date(

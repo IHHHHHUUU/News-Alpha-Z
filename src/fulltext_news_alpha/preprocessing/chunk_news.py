@@ -5,13 +5,26 @@ from __future__ import annotations
 import argparse
 import hashlib
 from dataclasses import asdict
+from datetime import date, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 
 from fulltext_news_alpha.preprocessing.clean_news import clean_news_text
-from fulltext_news_alpha.preprocessing.time_alignment import add_signal_date
+from fulltext_news_alpha.preprocessing.time_alignment import assign_signal_date_from_calendar, normalize_trading_days
 from fulltext_news_alpha.schemas import ChunkRecord, RawNewsRecord
+
+
+TradingDays = list[date] | pd.Series | pd.DatetimeIndex
+
+
+def _to_timestamp(value: Any) -> pd.Timestamp:
+    return cast(pd.Timestamp, pd.Timestamp(value))
+
+
+def _is_missing(value: Any) -> bool:
+    return bool(pd.isna(value))
 
 
 def whitespace_tokenize(text: str) -> list[str]:
@@ -21,7 +34,7 @@ def whitespace_tokenize(text: str) -> list[str]:
 
 
 def stable_chunk_id(news_id: str, ticker: str, signal_date: object, chunk_index: int) -> str:
-    raw = f"{news_id}|{ticker}|{pd.Timestamp(signal_date).date()}|{chunk_index}".encode("utf-8")
+    raw = f"{news_id}|{ticker}|{_to_timestamp(signal_date).date()}|{chunk_index}".encode("utf-8")
     return hashlib.sha1(raw).hexdigest()[:16]
 
 
@@ -53,7 +66,7 @@ def chunk_text_by_tokens(
 
 def build_chunks_for_records(
     records: list[RawNewsRecord],
-    trading_days: list[object] | pd.DatetimeIndex,
+    trading_days: TradingDays,
     max_tokens: int = 256,
     max_chunks_per_stock_day: int = 64,
     overlap_tokens: int = 0,
@@ -61,10 +74,13 @@ def build_chunks_for_records(
     """Create a capped stock-day chunk table from normalized raw news records."""
 
     rows: list[dict[str, object]] = []
+    calendar = normalize_trading_days(trading_days)
     for record in records:
-        signal_date = add_signal_date(
-            pd.DataFrame({"publish_time": [record.publish_time]}), trading_days
-        ).loc[0, "date"]
+        try:
+            signal_date = assign_signal_date_from_calendar(record.publish_time, calendar)
+        except ValueError:
+            # News beyond the available calendar cannot form a tradable signal.
+            continue
         chunks = chunk_text_by_tokens(record.text, max_tokens=max_tokens, overlap_tokens=overlap_tokens)
         for idx, chunk in enumerate(chunks):
             chunk_record = ChunkRecord(
@@ -81,7 +97,7 @@ def build_chunks_for_records(
             rows.append(asdict(chunk_record))
 
     if not rows:
-        return pd.DataFrame(columns=list(ChunkRecord.__dataclass_fields__))
+        return pd.DataFrame(columns=pd.Index(ChunkRecord.__dataclass_fields__.keys()))
     chunks = pd.DataFrame(rows).sort_values(
         ["ticker", "date", "publish_time", "source_news_id", "chunk_index"]
     )
@@ -92,7 +108,7 @@ def build_chunks_for_records(
 
 def chunk_dataframe(
     news: pd.DataFrame,
-    trading_days: list[object] | pd.DatetimeIndex,
+    trading_days: TradingDays,
     max_tokens: int = 256,
     max_chunks_per_stock_day: int = 64,
     overlap_tokens: int = 0,
@@ -104,17 +120,22 @@ def chunk_dataframe(
     if missing:
         raise KeyError(f"Missing required news columns: {sorted(missing)}")
 
-    records = [
-        RawNewsRecord(
-            news_id=str(row.news_id),
-            ticker=str(row.ticker),
-            publish_time=pd.Timestamp(row.publish_time).to_pydatetime(),
-            title="" if pd.isna(row.title) else str(row.title),
-            text="" if pd.isna(row.text) else str(row.text),
-            source=None if "source" not in news.columns or pd.isna(row.get("source")) else str(row.get("source")),
+    records: list[RawNewsRecord] = []
+    for row in cast(list[dict[str, Any]], news.to_dict(orient="records")):
+        publish_ts = _to_timestamp(row["publish_time"])
+        if _is_missing(publish_ts):
+            raise ValueError("publish_time contains missing or unparseable values")
+        source_value = row.get("source")
+        records.append(
+            RawNewsRecord(
+                news_id=str(row["news_id"]),
+                ticker=str(row["ticker"]),
+                publish_time=cast(datetime, publish_ts.to_pydatetime()),
+                title="" if _is_missing(row["title"]) else str(row["title"]),
+                text="" if _is_missing(row["text"]) else str(row["text"]),
+                source=None if _is_missing(source_value) else str(source_value),
+            )
         )
-        for row in news.itertuples(index=False)
-    ]
     return build_chunks_for_records(
         records,
         trading_days=trading_days,

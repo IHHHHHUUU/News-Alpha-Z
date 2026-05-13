@@ -1,0 +1,111 @@
+_wandb:
+    value:
+        cli_version: 0.26.1
+        e:
+            j9vruidttrkwwspacgh4u4k5v3ldlh71:
+                args:
+                    - --wandb
+                    - --wandb-project
+                    - news-alpha-z
+                    - --wandb-run-name
+                    - b2-b5-mean768-lookahead-fixed
+                codePath: scripts/13_train_b2_b5.py
+                codePathLocal: scripts/13_train_b2_b5.py
+                cpu_count: 128
+                cpu_count_logical: 256
+                cudaVersion: "12.4"
+                disk:
+                    /:
+                        total: "32212254720"
+                        used: "4703674368"
+                email: zywoooooo@icloud.com
+                executable: /root/miniconda3/bin/python
+                git:
+                    commit: 4e4df018e3727d7b2c49f6f4745e85dabbf55572
+                    remote: https://github.com/IHHHHHUUU/News-Alpha-Z.git
+                gpu: NVIDIA GeForce RTX 4090 D
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 14592
+                      memoryTotal: "25757220864"
+                      name: NVIDIA GeForce RTX 4090 D
+                      uuid: GPU-4814bee4-4be1-f3c3-a432-6ee833018caa
+                host: autodl-container-df6c4fa6bd-738f7d21
+                memory:
+                    total: "810848731136"
+                os: Linux-5.15.0-94-generic-x86_64-with-glibc2.35
+                program: /root/autodl-tmp/News-Alpha-Z/scripts/13_train_b2_b5.py
+                python: CPython 3.10.8
+                root: /root/autodl-tmp/News-Alpha-Z
+                startedAt: "2026-05-13T09:09:17.844848Z"
+                writerId: j9vruidttrkwwspacgh4u4k5v3ldlh71
+        m: []
+        python_version: 3.10.8
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+                - 11
+                - 49
+            "3":
+                - 2
+                - 13
+                - 16
+                - 62
+            "4": 3.10.8
+            "5": 0.26.1
+            "12": 0.26.1
+            "13": linux-x86_64
+bottleneck_hidden_dim:
+    value: 256
+dataset_sizes:
+    value:
+        test: 44500
+        train: 66440
+        valid: 22428
+dropout:
+    value: 0.1
+embedding_dim:
+    value: 768
+factor_dim:
+    value: 10
+gate_temperature:
+    value: 0.5
+hidden_dim:
+    value: 128
+label_col:
+    value: future_20d_market_adjusted_return
+model:
+    value: B2+B5 decoupled mixture
+news_dim:
+    value: 64
+split:
+    value:
+        test_end: "2023-12-31"
+        test_start: "2022-01-01"
+        train_end: "2020-12-31"
+        train_start: "2018-01-01"
+        valid_end: "2021-12-31"
+        valid_start: "2021-01-01"
+split_sizes:
+    value:
+        test: 44500
+        train: 66440
+        valid: 22428
+stage2_fusion_dataset_sizes:
+    value:
+        train: 28052
+        valid: 10301
+train_config:
+    value:
+        batch_size: 4096
+        device: null
+        early_stopping_patience: 5
+        grad_clip_norm: 1
+        learning_rate: 0.001
+        max_epochs: 50
+        num_workers: 0
+        seed: 42
+        weight_decay: 0.0001

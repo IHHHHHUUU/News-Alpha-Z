@@ -38,16 +38,21 @@ from fulltext_news_alpha.models.factor_branch import FactorBranch
 from fulltext_news_alpha.models.fusion_branch import FusionBranch
 from fulltext_news_alpha.models.mixture_gate import MixtureGate
 from fulltext_news_alpha.models.news_bottleneck import NewsBottleneck
+from fulltext_news_alpha.training.temporal_training import train_temporal_b4
 from fulltext_news_alpha.training.torch_utils import (
     SplitConfig,
     StockDayDataset,
     TrainConfig,
+    WandbConfig,
     build_dataloader,
     collect_predictions,
     dump_json,
     emb_column_names,
+    finish_wandb_run,
     infer_factor_columns,
+    init_wandb_run,
     load_training_panel,
+    make_wandb_callback,
     resolve_device,
     save_checkpoint,
     set_global_seed,
@@ -149,8 +154,29 @@ def train_b2_b4(
     hidden_dim: int = 128,
     bottleneck_hidden_dim: int = 256,
     dropout: float = 0.1,
+    lookback_window: int = 30,
+    kernel_size: int = 3,
+    dilations: tuple[int, ...] = (1, 2, 4, 8),
+    wandb_config: WandbConfig | None = None,
 ) -> dict[str, Any]:
     """Run the full B2+B4 training pipeline and save predictions / checkpoint."""
+
+    return train_temporal_b4(
+        news_pooling="b2",
+        panel_path=panel_path,
+        output_dir=output_dir,
+        split=split,
+        config=config,
+        label_col=label_col,
+        news_dim=news_dim,
+        hidden_dim=hidden_dim,
+        bottleneck_hidden_dim=bottleneck_hidden_dim,
+        dropout=dropout,
+        lookback_window=lookback_window,
+        kernel_size=kernel_size,
+        dilations=dilations,
+        wandb_config=wandb_config,
+    )
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -194,13 +220,41 @@ def train_b2_b4(
         dropout=dropout,
     )
 
-    history = train_loop(
-        model=model,
-        train_loader=loaders["train"],
-        valid_loader=loaders["valid"],
-        compute_loss=_mse_loss,
-        config=config,
+    run = init_wandb_run(
+        wandb_config or WandbConfig(),
+        {
+            "model": "B2+B4 conventional mixture",
+            "label_col": label_col,
+            "factor_dim": len(factor_cols),
+            "embedding_dim": len(embedding_cols),
+            "news_dim": news_dim,
+            "hidden_dim": hidden_dim,
+            "bottleneck_hidden_dim": bottleneck_hidden_dim,
+            "dropout": dropout,
+            "split": asdict(split),
+            "train_config": asdict(config),
+            "split_sizes": {name: int(len(frame)) for name, frame in splits.items()},
+            "dataset_sizes": {name: int(len(dataset)) for name, dataset in datasets.items()},
+        },
     )
+    try:
+        history = train_loop(
+            model=model,
+            train_loader=loaders["train"],
+            valid_loader=loaders["valid"],
+            compute_loss=_mse_loss,
+            config=config,
+            progress_callback=make_wandb_callback(run, "b2_b4"),
+        )
+        if run is not None:
+            run.summary.update(
+                {
+                    "best_valid_loss": history.get("best_valid_loss"),
+                    "best_epoch": history.get("best_epoch"),
+                }
+            )
+    finally:
+        finish_wandb_run(run)
 
     device = resolve_device(config.device)
     model.to(device)
@@ -267,8 +321,17 @@ def main() -> None:
     parser.add_argument("--bottleneck-hidden-dim", type=int, default=256)
     parser.add_argument("--news-dim", type=int, default=64)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--lookback-window", type=int, default=30)
+    parser.add_argument("--kernel-size", type=int, default=3)
+    parser.add_argument("--dilations", type=int, nargs="+", default=[1, 2, 4, 8])
     parser.add_argument("--device", default=None)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging.")
+    parser.add_argument("--wandb-project", default="news-alpha-z")
+    parser.add_argument("--wandb-entity", default=None)
+    parser.add_argument("--wandb-run-name", default=None)
+    parser.add_argument("--wandb-group", default=None)
+    parser.add_argument("--wandb-mode", default=None, help="wandb mode, e.g. online/offline/disabled.")
     args = parser.parse_args()
 
     split = SplitConfig()
@@ -292,6 +355,17 @@ def main() -> None:
         hidden_dim=args.hidden_dim,
         bottleneck_hidden_dim=args.bottleneck_hidden_dim,
         dropout=args.dropout,
+        lookback_window=args.lookback_window,
+        kernel_size=args.kernel_size,
+        dilations=tuple(args.dilations),
+        wandb_config=WandbConfig(
+            enabled=args.wandb,
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            run_name=args.wandb_run_name,
+            group=args.wandb_group,
+            mode=args.wandb_mode,
+        ),
     )
     summary = {
         "best_valid_loss": metadata["history"].get("best_valid_loss"),

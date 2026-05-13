@@ -35,16 +35,21 @@ from fulltext_news_alpha.models.factor_branch import FactorBranch
 from fulltext_news_alpha.models.fusion_branch import FusionBranch
 from fulltext_news_alpha.models.mixture_gate import MixtureGate
 from fulltext_news_alpha.models.news_bottleneck import NewsBottleneck
+from fulltext_news_alpha.training.temporal_training import train_temporal_b5
 from fulltext_news_alpha.training.torch_utils import (
     SplitConfig,
     StockDayDataset,
     TrainConfig,
+    WandbConfig,
     build_dataloader,
     collect_predictions,
     dump_json,
     emb_column_names,
+    finish_wandb_run,
     infer_factor_columns,
+    init_wandb_run,
     load_training_panel,
+    make_wandb_callback,
     resolve_device,
     save_checkpoint,
     set_global_seed,
@@ -229,8 +234,30 @@ def train_b2_b5(
     bottleneck_hidden_dim: int = 256,
     dropout: float = 0.1,
     gate_temperature: float = 0.5,
+    lookback_window: int = 30,
+    kernel_size: int = 3,
+    dilations: tuple[int, ...] = (1, 2, 4, 8),
+    wandb_config: WandbConfig | None = None,
 ) -> dict[str, Any]:
     """Run the three-stage B2+B5 pipeline and persist all artifacts."""
+
+    return train_temporal_b5(
+        news_pooling="b2",
+        panel_path=panel_path,
+        output_dir=output_dir,
+        split=split,
+        config=config,
+        label_col=label_col,
+        news_dim=news_dim,
+        hidden_dim=hidden_dim,
+        bottleneck_hidden_dim=bottleneck_hidden_dim,
+        dropout=dropout,
+        gate_temperature=gate_temperature,
+        lookback_window=lookback_window,
+        kernel_size=kernel_size,
+        dilations=dilations,
+        wandb_config=wandb_config,
+    )
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -290,6 +317,27 @@ def train_b2_b5(
         for name, dataset in fusion_datasets.items()
     }
     device = resolve_device(config.device)
+    run = init_wandb_run(
+        wandb_config or WandbConfig(),
+        {
+            "model": "B2+B5 decoupled mixture",
+            "label_col": label_col,
+            "factor_dim": len(factor_cols),
+            "embedding_dim": len(embedding_cols),
+            "news_dim": news_dim,
+            "hidden_dim": hidden_dim,
+            "bottleneck_hidden_dim": bottleneck_hidden_dim,
+            "dropout": dropout,
+            "gate_temperature": gate_temperature,
+            "split": asdict(split),
+            "train_config": asdict(config),
+            "split_sizes": {name: int(len(frame)) for name, frame in splits.items()},
+            "dataset_sizes": {name: int(len(dataset)) for name, dataset in datasets.items()},
+            "stage2_fusion_dataset_sizes": {
+                name: int(len(dataset)) for name, dataset in fusion_datasets.items()
+            },
+        },
+    )
 
     # Stage 1 - factor branch.
     factor_model = FactorBranch(factor_dim=len(factor_cols), hidden_dim=hidden_dim, dropout=dropout)
@@ -303,6 +351,7 @@ def train_b2_b5(
         valid_loader=loaders["valid"],
         compute_loss=_factor_loss,
         config=config,
+        progress_callback=make_wandb_callback(run, "stage1_factor"),
     )
     factor_model.to(device)
     factor_preds = _predict_factor_only(factor_model, datasets, device)
@@ -322,6 +371,7 @@ def train_b2_b5(
         valid_loader=fusion_loaders["valid"],
         compute_loss=_fusion_loss,
         config=config,
+        progress_callback=make_wandb_callback(run, "stage2_fusion"),
     )
     fusion_model.to(device)
     fusion_outputs = _predict_fusion(fusion_model, datasets, device)
@@ -360,6 +410,15 @@ def train_b2_b5(
         "train": _gate_target_stats(gate_target_train),
         "valid": _gate_target_stats(gate_target_valid),
     }
+    if run is not None:
+        run.log(
+            {
+                "gate_target/train_mean": gate_target_distribution["train"]["mean"],
+                "gate_target/train_std": gate_target_distribution["train"]["std"],
+                "gate_target/valid_mean": gate_target_distribution["valid"]["mean"],
+                "gate_target/valid_std": gate_target_distribution["valid"]["std"],
+            }
+        )
     gate_valid_dataset = GateInputDataset(
         factors=datasets["valid"].factors.numpy()[valid_gate_mask],
         full_text_news_repr=valid_repr[valid_gate_mask],
@@ -391,6 +450,7 @@ def train_b2_b5(
         valid_loader=gate_valid_loader,
         compute_loss=_gate_loss,
         config=config,
+        progress_callback=make_wandb_callback(run, "stage3_gate"),
     )
 
     # Build final predictions for train / valid / test.
@@ -492,6 +552,18 @@ def train_b2_b5(
             "stage3": str(output_dir / "b2_b5_stage3_gate.pt"),
         },
     }
+    if run is not None:
+        run.summary.update(
+            {
+                "stage1_best_valid_loss": stage1_history.get("best_valid_loss"),
+                "stage2_best_valid_loss": stage2_history.get("best_valid_loss"),
+                "stage3_best_valid_loss": stage3_history.get("best_valid_loss"),
+                "stage1_best_epoch": stage1_history.get("best_epoch"),
+                "stage2_best_epoch": stage2_history.get("best_epoch"),
+                "stage3_best_epoch": stage3_history.get("best_epoch"),
+            }
+        )
+        finish_wandb_run(run)
     dump_json(output_dir / "metadata.json", metadata)
     return metadata
 
@@ -512,8 +584,17 @@ def main() -> None:
     parser.add_argument("--news-dim", type=int, default=64)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--gate-temperature", type=float, default=0.5)
+    parser.add_argument("--lookback-window", type=int, default=30)
+    parser.add_argument("--kernel-size", type=int, default=3)
+    parser.add_argument("--dilations", type=int, nargs="+", default=[1, 2, 4, 8])
     parser.add_argument("--device", default=None)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging.")
+    parser.add_argument("--wandb-project", default="news-alpha-z")
+    parser.add_argument("--wandb-entity", default=None)
+    parser.add_argument("--wandb-run-name", default=None)
+    parser.add_argument("--wandb-group", default=None)
+    parser.add_argument("--wandb-mode", default=None, help="wandb mode, e.g. online/offline/disabled.")
     args = parser.parse_args()
 
     split = SplitConfig()
@@ -538,6 +619,17 @@ def main() -> None:
         bottleneck_hidden_dim=args.bottleneck_hidden_dim,
         dropout=args.dropout,
         gate_temperature=args.gate_temperature,
+        lookback_window=args.lookback_window,
+        kernel_size=args.kernel_size,
+        dilations=tuple(args.dilations),
+        wandb_config=WandbConfig(
+            enabled=args.wandb,
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            run_name=args.wandb_run_name,
+            group=args.wandb_group,
+            mode=args.wandb_mode,
+        ),
     )
     summary = {
         "stage1_best_valid_loss": metadata["histories"]["stage1"].get("best_valid_loss"),

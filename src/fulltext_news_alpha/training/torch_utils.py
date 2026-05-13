@@ -61,6 +61,18 @@ class TrainConfig:
     seed: int = 42
 
 
+@dataclass(frozen=True)
+class WandbConfig:
+    """Optional Weights & Biases run settings."""
+
+    enabled: bool = False
+    project: str = "news-alpha-z"
+    entity: str | None = None
+    run_name: str | None = None
+    group: str | None = None
+    mode: str | None = None
+
+
 def set_global_seed(seed: int) -> None:
     """Seed Python, NumPy, and PyTorch RNGs."""
 
@@ -78,6 +90,55 @@ def resolve_device(preferred: str | None = None) -> torch.device:
     if preferred:
         return torch.device(preferred)
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def init_wandb_run(config: WandbConfig, payload: dict[str, Any]) -> Any | None:
+    """Start a wandb run when enabled, otherwise return None."""
+
+    if not config.enabled:
+        return None
+    try:
+        import wandb
+    except ImportError as exc:  # pragma: no cover - depends on optional package.
+        raise RuntimeError("wandb logging requested, but wandb is not installed.") from exc
+
+    kwargs: dict[str, Any] = {
+        "project": config.project,
+        "config": payload,
+    }
+    if config.entity:
+        kwargs["entity"] = config.entity
+    if config.run_name:
+        kwargs["name"] = config.run_name
+    if config.group:
+        kwargs["group"] = config.group
+    if config.mode:
+        kwargs["mode"] = config.mode
+    return wandb.init(**kwargs)
+
+
+def make_wandb_callback(run: Any | None, prefix: str) -> Callable[[dict[str, Any]], None] | None:
+    """Build a train_loop callback that logs epoch metrics with a stage prefix."""
+
+    if run is None:
+        return None
+
+    def _callback(entry: dict[str, Any]) -> None:
+        epoch = int(entry["epoch"])
+        metrics = {
+            f"{prefix}/{key}": value
+            for key, value in entry.items()
+            if key != "epoch"
+        }
+        metrics[f"{prefix}/epoch"] = epoch
+        run.log(metrics)
+
+    return _callback
+
+
+def finish_wandb_run(run: Any | None) -> None:
+    if run is not None:
+        run.finish()
 
 
 def load_training_panel(path: str | Path) -> pd.DataFrame:
