@@ -25,6 +25,7 @@ import pandas as pd
 try:
     import torch
     from torch import nn
+    from torch.nn.utils.clip_grad import clip_grad_norm_
     from torch.utils.data import DataLoader, Dataset
 except ImportError as exc:  # pragma: no cover - exercised only without torch installed.
     raise RuntimeError(
@@ -116,7 +117,12 @@ def to_float_tensor(values: np.ndarray | pd.DataFrame | pd.Series) -> torch.Tens
 
 
 class StockDayDataset(Dataset):
-    """Stock-day Dataset exposing (factors, news_emb, has_news, label) tensors."""
+    """Stock-day Dataset exposing (factors, news_emb, has_news, label) tensors.
+
+    Train/validation callers should keep ``drop_missing_label=True`` so losses
+    never see fake targets. Test/inference callers may keep missing labels; they
+    remain NaN rather than being filled with zero.
+    """
 
     def __init__(
         self,
@@ -137,7 +143,7 @@ class StockDayDataset(Dataset):
 
         self.factors = to_float_tensor(frame[self.factor_cols].fillna(0.0).to_numpy())
         self.news_emb = to_float_tensor(frame[self.embedding_cols].fillna(0.0).to_numpy())
-        self.labels = to_float_tensor(frame[self.label_col].fillna(0.0).to_numpy())
+        self.labels = to_float_tensor(frame[self.label_col].to_numpy())
         self.has_news = to_float_tensor(frame[self.has_news_col].fillna(0).to_numpy())
         self.keys = frame[["date", "ticker"]].copy()
 
@@ -244,7 +250,7 @@ def train_loop(
             loss = compute_loss(model, batch_on_device)
             loss.backward()
             if config.grad_clip_norm:
-                torch.nn.utils.clip_grad_norm_(
+                clip_grad_norm_(
                     model.parameters(),
                     max_norm=float(config.grad_clip_norm),
                 )

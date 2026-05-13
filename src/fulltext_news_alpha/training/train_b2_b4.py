@@ -170,7 +170,7 @@ def train_b2_b4(
             embedding_cols=embedding_cols,
             label_col=label_col,
             has_news_col="has_news",
-            drop_missing_label=(name == "train"),
+            drop_missing_label=(name != "test"),
         )
         for name, frame in splits.items()
     }
@@ -240,6 +240,7 @@ def train_b2_b4(
         "split": asdict(split),
         "train_config": asdict(config),
         "split_sizes": {name: int(len(frame)) for name, frame in splits.items()},
+        "dataset_sizes": {name: int(len(dataset)) for name, dataset in datasets.items()},
         "history": history,
         "outputs": {
             split_name: str(output_dir / f"{split_name}.parquet")

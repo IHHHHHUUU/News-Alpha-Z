@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 import pandas as pd
 
 from fulltext_news_alpha.preprocessing.time_alignment import assign_signal_date
@@ -24,3 +26,16 @@ def test_timezone_aware_timestamp_uses_new_york_close() -> None:
     calendar = pd.to_datetime(["2024-01-02", "2024-01-03"])
     assert assign_signal_date("2024-01-02T20:30:00Z", calendar).isoformat() == "2024-01-02"
     assert assign_signal_date("2024-01-02T21:30:00Z", calendar).isoformat() == "2024-01-03"
+
+
+def test_date_only_news_maps_to_next_trading_day() -> None:
+    calendar = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"])
+    assert assign_signal_date("2024-01-02", calendar).isoformat() == "2024-01-03"
+    assert assign_signal_date(date(2024, 1, 2), calendar).isoformat() == "2024-01-03"
+
+
+def test_midnight_news_maps_to_next_trading_day_from_source_date() -> None:
+    calendar = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"])
+    assert assign_signal_date("2024-01-02 00:00:00", calendar).isoformat() == "2024-01-03"
+    assert assign_signal_date("2024-01-02T00:00:00Z", calendar).isoformat() == "2024-01-03"
+    assert assign_signal_date("2024-01-02T05:00:00Z", calendar).isoformat() == "2024-01-03"

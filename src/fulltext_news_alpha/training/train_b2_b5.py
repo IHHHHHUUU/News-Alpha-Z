@@ -2,7 +2,7 @@
 
 Stage 1: train ``FactorBranch`` (factors -> future_return) with MSE.
 Stage 2: train ``NewsBottleneck + FusionBranch`` (factors + news_emb -> future_return)
-         with MSE, restricted to ``has_news == 1`` stock-days.
+         with MSE on loaders containing only ``has_news == 1`` rows with labels.
 Stage 3: freeze Stage 1 and Stage 2. Build gate targets from per-row branch
          errors and train ``MixtureGate`` with a binary cross-entropy loss
          against the soft target ``softmax([-err_factor/tau, -err_fusion/tau])``.
@@ -94,14 +94,13 @@ def _factor_loss(model: nn.Module, batch: dict[str, torch.Tensor]) -> torch.Tens
     return torch.mean((pred - batch["label"]) ** 2)
 
 
-def _fusion_loss_masked(model: nn.Module, batch: dict[str, torch.Tensor]) -> torch.Tensor:
-    """MSE restricted to stock-days with news."""
-
+def _fusion_loss(model: nn.Module, batch: dict[str, torch.Tensor]) -> torch.Tensor:
     outputs = model(batch["factors"], batch["news_emb"])
-    mask = batch["has_news"].clamp(0.0, 1.0)
-    diff_sq = (outputs["fusion_pred"] - batch["label"]) ** 2
-    denom = mask.sum().clamp(min=1.0)
-    return (diff_sq * mask).sum() / denom
+    return torch.mean((outputs["fusion_pred"] - batch["label"]) ** 2)
+
+
+def _news_labeled_frame(frame: pd.DataFrame, label_col: str) -> pd.DataFrame:
+    return frame.loc[frame["has_news"] == 1].dropna(subset=[label_col]).reset_index(drop=True)
 
 
 def _gate_targets_from_errors(
@@ -114,6 +113,32 @@ def _gate_targets_from_errors(
     exp = np.exp(logits)
     probs = exp / exp.sum(axis=1, keepdims=True)
     return probs[:, 1].astype(np.float32)
+
+
+def _gate_target_stats(values: np.ndarray) -> dict[str, float]:
+    arr = np.asarray(values, dtype=np.float64).ravel()
+    if arr.size == 0:
+        return {
+            "count": 0,
+            "mean": float("nan"),
+            "std": float("nan"),
+            "p05": float("nan"),
+            "p25": float("nan"),
+            "p50": float("nan"),
+            "p75": float("nan"),
+            "p95": float("nan"),
+        }
+    percentiles = np.quantile(arr, [0.05, 0.25, 0.5, 0.75, 0.95])
+    return {
+        "count": int(arr.size),
+        "mean": float(np.mean(arr)),
+        "std": float(np.std(arr)),
+        "p05": float(percentiles[0]),
+        "p25": float(percentiles[1]),
+        "p50": float(percentiles[2]),
+        "p75": float(percentiles[3]),
+        "p95": float(percentiles[4]),
+    }
 
 
 class GateInputDataset(torch.utils.data.Dataset):
@@ -203,7 +228,7 @@ def train_b2_b5(
     hidden_dim: int = 128,
     bottleneck_hidden_dim: int = 256,
     dropout: float = 0.1,
-    gate_temperature: float = 1.0,
+    gate_temperature: float = 0.5,
 ) -> dict[str, Any]:
     """Run the three-stage B2+B5 pipeline and persist all artifacts."""
 
@@ -225,7 +250,7 @@ def train_b2_b5(
             embedding_cols=embedding_cols,
             label_col=label_col,
             has_news_col="has_news",
-            drop_missing_label=(name == "train"),
+            drop_missing_label=(name != "test"),
         )
         for name, frame in splits.items()
     }
@@ -238,6 +263,31 @@ def train_b2_b5(
             drop_last=False,
         )
         for name, dataset in datasets.items()
+    }
+    fusion_frames = {
+        "train": _news_labeled_frame(splits["train"], label_col),
+        "valid": _news_labeled_frame(splits["valid"], label_col),
+    }
+    fusion_datasets = {
+        name: StockDayDataset(
+            frame,
+            factor_cols=factor_cols,
+            embedding_cols=embedding_cols,
+            label_col=label_col,
+            has_news_col="has_news",
+            drop_missing_label=False,
+        )
+        for name, frame in fusion_frames.items()
+    }
+    fusion_loaders = {
+        name: build_dataloader(
+            dataset,
+            batch_size=config.batch_size,
+            shuffle=(name == "train"),
+            num_workers=config.num_workers,
+            drop_last=False,
+        )
+        for name, dataset in fusion_datasets.items()
     }
     device = resolve_device(config.device)
 
@@ -268,9 +318,9 @@ def train_b2_b5(
     )
     stage2_history = train_loop(
         model=fusion_model,
-        train_loader=loaders["train"],
-        valid_loader=loaders["valid"],
-        compute_loss=_fusion_loss_masked,
+        train_loader=fusion_loaders["train"],
+        valid_loader=fusion_loaders["valid"],
+        compute_loss=_fusion_loss,
         config=config,
     )
     fusion_model.to(device)
@@ -306,6 +356,10 @@ def train_b2_b5(
         label=valid_labels[valid_gate_mask],
         temperature=gate_temperature,
     )
+    gate_target_distribution = {
+        "train": _gate_target_stats(gate_target_train),
+        "valid": _gate_target_stats(gate_target_valid),
+    }
     gate_valid_dataset = GateInputDataset(
         factors=datasets["valid"].factors.numpy()[valid_gate_mask],
         full_text_news_repr=valid_repr[valid_gate_mask],
@@ -341,7 +395,6 @@ def train_b2_b5(
 
     # Build final predictions for train / valid / test.
     gate_model.to(device)
-    predictions: dict[str, pd.DataFrame] = {}
     for split_name in ("train", "valid", "test"):
         factor_pred = factor_preds[split_name]
         fusion_pred, repr_matrix = fusion_outputs[split_name]
@@ -365,7 +418,6 @@ def train_b2_b5(
         frame["fusion_pred"] = fusion_pred_full
         frame["gate_news_prob"] = gate_prob
         frame["mixed_pred"] = mixed_pred
-        predictions[split_name] = frame
         frame.to_parquet(output_dir / f"final_{split_name}.parquet", index=False)
 
     # Persist stage-specific predictions for traceability.
@@ -392,6 +444,8 @@ def train_b2_b5(
             "embedding_dim": len(embedding_cols),
             "news_dim": news_dim,
             "label_col": label_col,
+            "fusion_train_rows": len(fusion_datasets["train"]),
+            "fusion_valid_rows": len(fusion_datasets["valid"]),
         },
     )
     save_checkpoint(
@@ -401,6 +455,7 @@ def train_b2_b5(
             "factor_cols": factor_cols,
             "news_dim": news_dim,
             "gate_temperature": gate_temperature,
+            "gate_target_distribution": gate_target_distribution,
         },
     )
 
@@ -414,9 +469,14 @@ def train_b2_b5(
         "bottleneck_hidden_dim": bottleneck_hidden_dim,
         "dropout": dropout,
         "gate_temperature": gate_temperature,
+        "gate_target_distribution": gate_target_distribution,
         "split": asdict(split),
         "train_config": asdict(config),
         "split_sizes": {name: int(len(frame)) for name, frame in splits.items()},
+        "dataset_sizes": {name: int(len(dataset)) for name, dataset in datasets.items()},
+        "stage2_fusion_dataset_sizes": {
+            name: int(len(dataset)) for name, dataset in fusion_datasets.items()
+        },
         "histories": {
             "stage1": stage1_history,
             "stage2": stage2_history,
@@ -451,7 +511,7 @@ def main() -> None:
     parser.add_argument("--bottleneck-hidden-dim", type=int, default=256)
     parser.add_argument("--news-dim", type=int, default=64)
     parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--gate-temperature", type=float, default=1.0)
+    parser.add_argument("--gate-temperature", type=float, default=0.5)
     parser.add_argument("--device", default=None)
     parser.add_argument("--num-workers", type=int, default=0)
     args = parser.parse_args()
