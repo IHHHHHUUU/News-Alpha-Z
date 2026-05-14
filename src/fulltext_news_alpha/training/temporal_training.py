@@ -88,6 +88,8 @@ def _gate_targets_from_errors(
     label: np.ndarray,
     temperature: float,
 ) -> np.ndarray:
+    if temperature <= 0:
+        raise ValueError("gate temperature must be positive")
     err_factor = (factor_pred - label) ** 2
     err_fusion = (fusion_pred - label) ** 2
     logits = np.stack([-err_factor / temperature, -err_fusion / temperature], axis=1)
@@ -121,6 +123,80 @@ def _gate_target_stats(values: np.ndarray) -> dict[str, float]:
         "p75": float(percentiles[3]),
         "p95": float(percentiles[4]),
     }
+
+
+def _b5_data_diagnostics(
+    splits: dict[str, pd.DataFrame],
+    datasets: dict[str, B2SequenceStockDayDataset | B3SequenceStockDayDataset],
+    label_col: str,
+    lookback_window: int,
+    fusion_frames: dict[str, pd.DataFrame] | None = None,
+    fusion_datasets: dict[str, B2SequenceStockDayDataset | B3SequenceStockDayDataset] | None = None,
+) -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {
+        "lookback_window": int(lookback_window),
+        "split_sizes": {name: int(len(frame)) for name, frame in splits.items()},
+        "dataset_sizes": {name: int(len(dataset)) for name, dataset in datasets.items()},
+        "has_news_rows": {
+            name: int((frame["has_news"].fillna(0).astype(float) > 0.5).sum())
+            for name, frame in splits.items()
+        },
+        "label_available_rows": {
+            name: int(frame[label_col].notna().sum())
+            for name, frame in splits.items()
+        },
+    }
+    if fusion_frames is not None:
+        diagnostics["stage2_fusion_frame_sizes"] = {
+            name: int(len(frame)) for name, frame in fusion_frames.items()
+        }
+    if fusion_datasets is not None:
+        diagnostics["stage2_fusion_dataset_sizes"] = {
+            name: int(len(dataset)) for name, dataset in fusion_datasets.items()
+        }
+    return diagnostics
+
+
+def _ensure_non_empty_b5_dataset(
+    datasets: dict[str, B2SequenceStockDayDataset | B3SequenceStockDayDataset],
+    required_splits: tuple[str, ...],
+    diagnostics: dict[str, Any],
+    context: str,
+) -> None:
+    empty = [name for name in required_splits if len(datasets[name]) == 0]
+    if empty:
+        raise ValueError(f"Empty B5 {context} dataset(s): {empty}; diagnostics={diagnostics}")
+
+
+def _validate_gate_training_inputs(
+    split_name: str,
+    factor_pred: np.ndarray,
+    fusion_pred: np.ndarray,
+    labels: np.ndarray,
+    gate_mask: np.ndarray,
+    factor_state: np.ndarray,
+    news_state: np.ndarray,
+    diagnostics: dict[str, Any],
+) -> np.ndarray:
+    if not bool(np.any(gate_mask)):
+        raise ValueError(f"Empty Stage 3 gate {split_name} mask; diagnostics={diagnostics}")
+    selected = {
+        "factor_pred": np.asarray(factor_pred)[gate_mask],
+        "fusion_pred": np.asarray(fusion_pred)[gate_mask],
+        "labels": np.asarray(labels)[gate_mask],
+        "factor_state": np.asarray(factor_state)[gate_mask],
+        "news_state": np.asarray(news_state)[gate_mask],
+    }
+    non_finite = {
+        name: int((~np.isfinite(values)).sum())
+        for name, values in selected.items()
+    }
+    if any(count > 0 for count in non_finite.values()):
+        raise ValueError(
+            f"Non-finite Stage 3 gate {split_name} inputs: {non_finite}; "
+            f"diagnostics={diagnostics}"
+        )
+    return gate_mask
 
 
 class TemporalGateInputDataset(torch.utils.data.Dataset):
@@ -575,7 +651,6 @@ def train_temporal_b5(
         max_chunks_per_stock_day=max_chunks_per_stock_day,
         ticker_to_id=ticker_to_id,
     )
-    loaders = _build_loaders(datasets, config)
     fusion_frames = {
         "train": _news_labeled_frame(splits["train"], label_col),
         "valid": _news_labeled_frame(splits["valid"], label_col),
@@ -596,6 +671,17 @@ def train_temporal_b5(
         )
         for name, frame in fusion_frames.items()
     }
+    diagnostics = _b5_data_diagnostics(
+        splits=splits,
+        datasets=datasets,
+        label_col=label_col,
+        lookback_window=lookback_window,
+        fusion_frames=fusion_frames,
+        fusion_datasets=fusion_datasets,
+    )
+    _ensure_non_empty_b5_dataset(datasets, ("train", "valid", "test"), diagnostics, "base")
+    _ensure_non_empty_b5_dataset(fusion_datasets, ("train", "valid"), diagnostics, "Stage 2 fusion")
+    loaders = _build_loaders(datasets, config)
     fusion_loaders = _build_loaders(fusion_datasets, config)
     device = resolve_device(config.device)
     run = init_wandb_run(
@@ -666,6 +752,16 @@ def train_temporal_b5(
     train_has_news = datasets["train"].has_news.numpy()
     train_labels = datasets["train"].labels.numpy()
     train_gate_mask = train_has_news > 0.5
+    train_gate_mask = _validate_gate_training_inputs(
+        split_name="train",
+        factor_pred=train_factor_pred,
+        fusion_pred=train_fusion["fusion_pred"],
+        labels=train_labels,
+        gate_mask=train_gate_mask,
+        factor_state=train_factor_state,
+        news_state=train_fusion["full_text_news_repr"],
+        diagnostics=diagnostics,
+    )
     gate_target_train = _gate_targets_from_errors(
         factor_pred=train_factor_pred[train_gate_mask],
         fusion_pred=train_fusion["fusion_pred"][train_gate_mask],
@@ -683,6 +779,16 @@ def train_temporal_b5(
     valid_has_news = datasets["valid"].has_news.numpy()
     valid_labels = datasets["valid"].labels.numpy()
     valid_gate_mask = valid_has_news > 0.5
+    valid_gate_mask = _validate_gate_training_inputs(
+        split_name="valid",
+        factor_pred=valid_factor_pred,
+        fusion_pred=valid_fusion["fusion_pred"],
+        labels=valid_labels,
+        gate_mask=valid_gate_mask,
+        factor_state=valid_factor_state,
+        news_state=valid_fusion["full_text_news_repr"],
+        diagnostics=diagnostics,
+    )
     gate_target_valid = _gate_targets_from_errors(
         factor_pred=valid_factor_pred[valid_gate_mask],
         fusion_pred=valid_fusion["fusion_pred"][valid_gate_mask],

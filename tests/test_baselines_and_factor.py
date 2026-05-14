@@ -58,3 +58,36 @@ def test_full_text_news_alpha_formula_and_standardization() -> None:
     assert raw["B"] == -0.5
     assert raw["C"] == 0.0
     assert np.isclose(factor["FullTextNewsAlpha_zscore"].mean(), 0.0)
+
+
+def test_full_text_news_alpha_can_merge_panel_label_and_coverage() -> None:
+    predictions = pd.DataFrame(
+        {
+            "date": ["2024-01-02"],
+            "ticker": ["a"],
+            "factor_only_pred": [0.0],
+            "fusion_pred": [1.0],
+            "gate_news_prob": [0.5],
+            "mixed_pred": [0.5],
+            "attention_entropy": [0.7],
+        }
+    )
+    panel = pd.DataFrame(
+        {
+            "date": ["2024-01-02"],
+            "ticker": ["A"],
+            "news_count": [2],
+            "chunk_count": [3],
+            "future_20d_market_adjusted_return": [0.12],
+        }
+    )
+    factor = build_full_text_news_alpha(
+        predictions,
+        coverage=panel,
+        label_frame=panel,
+        label_col="future_20d_market_adjusted_return",
+    )
+    assert factor["news_count"].iloc[0] == 2
+    assert factor["chunk_count"].iloc[0] == 3
+    assert factor["attention_entropy"].iloc[0] == 0.7
+    assert factor["future_20d_market_adjusted_return"].iloc[0] == 0.12

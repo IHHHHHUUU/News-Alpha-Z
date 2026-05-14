@@ -183,3 +183,44 @@ def test_temporal_training_smoke_for_four_combinations(tmp_path) -> None:
     assert Path(b3_b5["outputs"]["final_train"]).exists()
     assert b3_b4["attention_outputs"]["train"]
     assert b3_b5["attention_outputs"]["train"]
+
+
+def test_b3_b5_smoke_with_memmap_cache(tmp_path) -> None:
+    from fulltext_news_alpha.training.build_chunk_memmap_cache import build_chunk_memmap_cache
+    from fulltext_news_alpha.training.temporal_training import train_temporal_b5
+
+    panel = _panel()
+    panel_path = tmp_path / "panel.parquet"
+    panel.to_parquet(panel_path, index=False)
+    manifest = _manifest(tmp_path / "manifest_chunks", panel)
+    cache_dir = tmp_path / "stockday_cache"
+    build_chunk_memmap_cache(
+        embeddings_root=manifest.parent,
+        output_dir=cache_dir,
+        project_root=tmp_path,
+        max_chunks_per_stock_day=2,
+    )
+    metadata = train_temporal_b5(
+        news_pooling="b3",
+        panel_path=panel_path,
+        output_dir=tmp_path / "b3_b5_cache",
+        split=_split(),
+        config=_config(),
+        label_col="future_20d_market_adjusted_return",
+        news_dim=4,
+        hidden_dim=8,
+        bottleneck_hidden_dim=16,
+        dropout=0.0,
+        lookback_window=3,
+        kernel_size=2,
+        dilations=(1, 2),
+        chunk_manifest=cache_dir,
+        project_root=tmp_path,
+        max_chunks_per_stock_day=2,
+    )
+    assert Path(metadata["outputs"]["final_train"]).exists()
+    assert Path(metadata["outputs"]["final_valid"]).exists()
+    assert Path(metadata["outputs"]["final_test"]).exists()
+    assert Path(metadata["attention_outputs"]["train"]).exists()
+    assert metadata["stage2_fusion_dataset_sizes"]["train"] > 0
+    assert metadata["stage2_fusion_dataset_sizes"]["valid"] > 0
