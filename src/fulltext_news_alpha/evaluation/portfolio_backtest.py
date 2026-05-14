@@ -6,6 +6,21 @@ import numpy as np
 import pandas as pd
 
 
+def filter_rebalance_dates(
+    frame: pd.DataFrame,
+    rebalance_every: int | None = None,
+    date_col: str = "date",
+) -> pd.DataFrame:
+    """Keep every Nth date to avoid overlapping forward-return holding windows."""
+
+    if rebalance_every is None or rebalance_every <= 1:
+        return frame.copy()
+    dates = pd.Index(pd.to_datetime(frame[date_col]).drop_duplicates().sort_values())
+    selected_dates = set(dates[:: int(rebalance_every)].date)
+    out = frame.copy()
+    return out.loc[pd.to_datetime(out[date_col]).dt.date.isin(selected_dates)].reset_index(drop=True)
+
+
 def assign_deciles(group: pd.DataFrame, factor_col: str, n_deciles: int = 10) -> pd.Series:
     valid = group[factor_col].rank(method="first")
     if valid.notna().sum() < n_deciles:
@@ -18,8 +33,9 @@ def decile_returns(
     factor_col: str = "FullTextNewsAlpha_zscore",
     return_col: str = "future_20d_market_adjusted_return",
     n_deciles: int = 10,
+    rebalance_every: int | None = None,
 ) -> pd.DataFrame:
-    out = frame.copy()
+    out = filter_rebalance_dates(frame, rebalance_every=rebalance_every)
     out["decile"] = pd.NA
     for _, group in out.groupby("date"):
         out.loc[group.index, "decile"] = assign_deciles(group, factor_col, n_deciles=n_deciles)
@@ -36,8 +52,15 @@ def long_short_returns(
     factor_col: str = "FullTextNewsAlpha_zscore",
     return_col: str = "future_20d_market_adjusted_return",
     n_deciles: int = 10,
+    rebalance_every: int | None = None,
 ) -> pd.DataFrame:
-    deciles = decile_returns(frame, factor_col=factor_col, return_col=return_col, n_deciles=n_deciles)
+    deciles = decile_returns(
+        frame,
+        factor_col=factor_col,
+        return_col=return_col,
+        n_deciles=n_deciles,
+        rebalance_every=rebalance_every,
+    )
     if deciles.empty:
         return pd.DataFrame(columns=["date", "long_return", "short_return", "long_short_return", "cumulative_return"])
     wide = deciles.pivot(index="date", columns="decile", values="return")
@@ -49,7 +72,7 @@ def long_short_returns(
     return out.reset_index()
 
 
-def performance_summary(returns: pd.Series, periods_per_year: int = 252) -> dict[str, float]:
+def performance_summary(returns: pd.Series, periods_per_year: float = 252) -> dict[str, float]:
     clean = returns.replace([np.inf, -np.inf], np.nan).dropna()
     if clean.empty:
         return {"annualized_return": np.nan, "Sharpe": np.nan, "max_drawdown": np.nan}

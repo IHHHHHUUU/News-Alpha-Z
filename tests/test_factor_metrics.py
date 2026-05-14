@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from fulltext_news_alpha.evaluation.ic_metrics import compute_ic_by_date, summarize_ic
-from fulltext_news_alpha.evaluation.portfolio_backtest import long_short_returns
+from fulltext_news_alpha.evaluation.portfolio_backtest import filter_rebalance_dates, long_short_returns
 from fulltext_news_alpha.factors.factor_standardization import standardize_by_date
 
 
@@ -47,3 +47,23 @@ def test_long_short_returns_are_positive_for_monotonic_factor() -> None:
     ls = long_short_returns(_factor_frame())
     assert (ls["long_short_return"] > 0).all()
     assert "cumulative_return" in ls.columns
+
+
+def test_rebalance_every_filters_to_non_overlapping_dates() -> None:
+    frame = pd.concat(
+        [
+            _factor_frame().assign(date=(pd.Timestamp("2024-01-02") + pd.offsets.BDay(i)).date())
+            for i in range(40)
+        ],
+        ignore_index=True,
+    )
+    filtered = filter_rebalance_dates(frame, rebalance_every=20)
+    assert list(pd.to_datetime(filtered["date"]).drop_duplicates()) == [
+        pd.Timestamp("2024-01-02"),
+        pd.Timestamp("2024-01-30"),
+    ]
+
+    ic = compute_ic_by_date(frame, rebalance_every=20)
+    ls = long_short_returns(frame, rebalance_every=20)
+    assert len(ic) == 2
+    assert len(ls) == 2

@@ -332,6 +332,11 @@ def train_loop(
             "best_epoch": int(early.best_epoch),
         }
         history.append(entry)
+        print(
+            "epoch={epoch} train_loss={train_loss:.6g} valid_loss={valid_loss:.6g} "
+            "best_valid_loss={best_valid_loss:.6g} best_epoch={best_epoch}".format(**entry),
+            flush=True,
+        )
         if progress_callback is not None:
             progress_callback(entry)
         if should_stop:

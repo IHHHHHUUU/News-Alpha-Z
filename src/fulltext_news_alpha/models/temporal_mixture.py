@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 from fulltext_news_alpha.models._torch import require_torch
 from fulltext_news_alpha.models.chunk_attention_pooler import ChunkAttentionPooler
 from fulltext_news_alpha.models.factor_branch import FactorBranch
@@ -54,6 +56,8 @@ class NewsSequenceEncoder(nn.Module):
         kernel_size: int = 3,
         dilations: tuple[int, ...] = (1, 2, 4, 8),
         dropout: float = 0.1,
+        chunk_index: Any | None = None,
+        max_chunks_per_stock_day: int = 64,
     ) -> None:
         super().__init__()
         if news_pooling not in {"b2", "b3"}:
@@ -61,6 +65,7 @@ class NewsSequenceEncoder(nn.Module):
         self.news_pooling = news_pooling
         self.embedding_dim = int(embedding_dim)
         self.daily_news_dim = int(daily_news_dim)
+        self.max_chunks_per_stock_day = int(max_chunks_per_stock_day)
         self.attention_pooler = (
             ChunkAttentionPooler(
                 chunk_dim=self.embedding_dim,
@@ -83,14 +88,53 @@ class NewsSequenceEncoder(nn.Module):
             dilations=dilations,
             dropout=dropout,
         )
+        self._register_stockday_cache(chunk_index)
+
+    def _register_stockday_cache(self, chunk_index: Any | None) -> None:
+        if self.news_pooling != "b3" or chunk_index is None:
+            return
+        memmap_path = getattr(chunk_index, "memmap_path", None)
+        stockday_offsets = getattr(chunk_index, "stockday_offsets", ())
+        chunk_count = int(getattr(chunk_index, "chunk_count", 0))
+        if memmap_path is None or not stockday_offsets or chunk_count <= 0:
+            return
+
+        matrix = np.memmap(
+            memmap_path,
+            dtype=np.float32,
+            mode="r",
+            shape=(chunk_count, self.embedding_dim),
+        )
+        cache = torch.zeros(
+            (len(stockday_offsets) + 1, self.max_chunks_per_stock_day, self.embedding_dim),
+            dtype=torch.float32,
+        )
+        mask = torch.zeros((len(stockday_offsets) + 1, self.max_chunks_per_stock_day), dtype=torch.bool)
+        for stockday_id, (offset, length) in enumerate(stockday_offsets, start=1):
+            if length <= 0:
+                continue
+            values = torch.from_numpy(np.asarray(matrix[offset : offset + length], dtype=np.float32).copy())
+            cache[stockday_id, :length] = values
+            mask[stockday_id, :length] = True
+        self.register_buffer("stockday_chunk_cache", cache, persistent=False)
+        self.register_buffer("stockday_chunk_mask_cache", mask, persistent=False)
 
     def _daily_pooled_news(self, batch: dict[str, Any]) -> dict[str, Any]:
         factor_seq = batch["factor_seq"]
         if self.news_pooling == "b2":
             return {"pooled_news_seq": batch["news_seq"]}
 
-        chunk_seq = batch["chunk_seq"]
-        chunk_mask_seq = batch["chunk_mask_seq"]
+        if "stockday_id_seq" in batch:
+            if not hasattr(self, "stockday_chunk_cache") or not hasattr(self, "stockday_chunk_mask_cache"):
+                raise RuntimeError("stockday_id_seq was provided, but no stock-day chunk cache is loaded")
+            stockday_ids = batch["stockday_id_seq"].long()
+            chunk_seq = self.stockday_chunk_cache[stockday_ids]
+            if chunk_seq.dtype != factor_seq.dtype:
+                chunk_seq = chunk_seq.to(factor_seq.dtype)
+            chunk_mask_seq = self.stockday_chunk_mask_cache[stockday_ids]
+        else:
+            chunk_seq = batch["chunk_seq"]
+            chunk_mask_seq = batch["chunk_mask_seq"]
         batch_size, seq_len, max_chunks, chunk_dim = chunk_seq.shape
         flat_chunks = chunk_seq.reshape(batch_size * seq_len, max_chunks, chunk_dim)
         flat_mask = chunk_mask_seq.reshape(batch_size * seq_len, max_chunks)
@@ -132,6 +176,8 @@ class TemporalMixtureModel(nn.Module):
         kernel_size: int = 3,
         dilations: tuple[int, ...] = (1, 2, 4, 8),
         dropout: float = 0.1,
+        chunk_index: Any | None = None,
+        max_chunks_per_stock_day: int = 64,
     ) -> None:
         super().__init__()
         self.factor_encoder = FactorSequenceEncoder(
@@ -151,6 +197,8 @@ class TemporalMixtureModel(nn.Module):
             kernel_size=kernel_size,
             dilations=dilations,
             dropout=dropout,
+            chunk_index=chunk_index,
+            max_chunks_per_stock_day=max_chunks_per_stock_day,
         )
         self.factor_branch = FactorBranch(factor_dim=hidden_dim, hidden_dim=hidden_dim, dropout=dropout)
         self.fusion_branch = FusionBranch(
@@ -222,6 +270,8 @@ class TemporalFusionModel(nn.Module):
         kernel_size: int = 3,
         dilations: tuple[int, ...] = (1, 2, 4, 8),
         dropout: float = 0.1,
+        chunk_index: Any | None = None,
+        max_chunks_per_stock_day: int = 64,
     ) -> None:
         super().__init__()
         self.factor_encoder = FactorSequenceEncoder(
@@ -241,6 +291,8 @@ class TemporalFusionModel(nn.Module):
             kernel_size=kernel_size,
             dilations=dilations,
             dropout=dropout,
+            chunk_index=chunk_index,
+            max_chunks_per_stock_day=max_chunks_per_stock_day,
         )
         self.fusion_branch = FusionBranch(
             factor_dim=hidden_dim,

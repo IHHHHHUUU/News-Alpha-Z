@@ -300,7 +300,7 @@ def _save_attention_weights(
     frame = pd.concat(
         [
             keys.reset_index(drop=True),
-            pd.DataFrame(weights.astype(np.float32), columns=weight_cols),
+            pd.DataFrame(weights.astype(np.float32), columns=pd.Index(weight_cols)),
         ],
         axis=1,
     )
@@ -365,6 +365,8 @@ def train_temporal_b4(
         kernel_size=kernel_size,
         dilations=dilations,
         dropout=dropout,
+        chunk_index=chunk_index,
+        max_chunks_per_stock_day=max_chunks_per_stock_day,
     )
     run = init_wandb_run(
         wandb_config or WandbConfig(),
@@ -822,7 +824,7 @@ def add_temporal_args(parser: argparse.ArgumentParser, news_pooling: str) -> Non
     parser.add_argument("--panel", default="data/processed/panel_train_b2_768.parquet")
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--label-col", default="future_20d_market_adjusted_return")
-    parser.add_argument("--batch-size", type=int, default=4096)
+    parser.add_argument("--batch-size", type=int, default=16 if news_pooling == "b3" else 4096)
     parser.add_argument("--max-epochs", type=int, default=50)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-4)

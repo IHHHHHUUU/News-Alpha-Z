@@ -1,0 +1,6 @@
+epoch=1 train_loss=0.0159026 valid_loss=0.00593589 best_valid_loss=0.00593589 best_epoch=1
+epoch=2 train_loss=0.0158336 valid_loss=0.00598562 best_valid_loss=0.00593589 best_epoch=1
+epoch=3 train_loss=0.0158373 valid_loss=0.00600669 best_valid_loss=0.00593589 best_epoch=1
+epoch=4 train_loss=0.015836 valid_loss=0.00594941 best_valid_loss=0.00593589 best_epoch=1
+epoch=5 train_loss=0.0158359 valid_loss=0.00599198 best_valid_loss=0.00593589 best_epoch=1
+epoch=6 train_loss=0.0158329 valid_loss=0.00617045 best_valid_loss=0.00593589 best_epoch=1

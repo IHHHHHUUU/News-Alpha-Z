@@ -1,0 +1,1 @@
+{"b3_b4/train_loss":0.015832913485770223,"b3_b4/epoch":6,"_runtime":780,"_wandb":{"runtime":780},"b3_b4/valid_loss":0.006170445448163184,"b3_b4/best_epoch":1,"_timestamp":1.7787287184645076e+09,"best_epoch":1,"b3_b4/best_valid_loss":0.005935890328018686,"_step":5,"best_valid_loss":0.005935890328018686,"b3_b4/improved":false}

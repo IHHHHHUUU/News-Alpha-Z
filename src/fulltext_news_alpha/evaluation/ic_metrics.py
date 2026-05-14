@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from fulltext_news_alpha.evaluation.portfolio_backtest import filter_rebalance_dates
+
 
 def _corr(group: pd.DataFrame, factor_col: str, return_col: str, method: str) -> float:
     valid = group[[factor_col, return_col]].replace([np.inf, -np.inf], np.nan).dropna()
@@ -17,9 +19,11 @@ def compute_ic_by_date(
     frame: pd.DataFrame,
     factor_col: str = "FullTextNewsAlpha_zscore",
     return_col: str = "future_20d_market_adjusted_return",
+    rebalance_every: int | None = None,
 ) -> pd.DataFrame:
     """Compute daily Pearson IC and Spearman RankIC."""
 
+    frame = filter_rebalance_dates(frame, rebalance_every=rebalance_every)
     rows: list[dict[str, object]] = []
     for date, group in frame.groupby("date"):
         rows.append(

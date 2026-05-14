@@ -1,0 +1,24 @@
+2026-05-14 11:05:33,019 INFO    MainThread:23033 [wandb_setup.py:_flush():81] Current SDK version is 0.26.1
+2026-05-14 11:05:33,019 INFO    MainThread:23033 [wandb_setup.py:_flush():81] Configure stats pid to 23033
+2026-05-14 11:05:33,020 INFO    MainThread:23033 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2026-05-14 11:05:33,020 INFO    MainThread:23033 [wandb_init.py:setup_run_log_directory():723] Logging user logs to /root/autodl-tmp/News-Alpha-Z/wandb/run-20260514_110533-76judbuu/logs/debug.log
+2026-05-14 11:05:33,020 INFO    MainThread:23033 [wandb_init.py:setup_run_log_directory():724] Logging internal logs to /root/autodl-tmp/News-Alpha-Z/wandb/run-20260514_110533-76judbuu/logs/debug-internal.log
+2026-05-14 11:05:33,020 INFO    MainThread:23033 [wandb_init.py:init():850] calling init triggers
+2026-05-14 11:05:33,020 INFO    MainThread:23033 [wandb_init.py:init():855] wandb.init called with sweep_config: {}
+config: {'model': 'B3+B4 TCN', 'label_col': 'future_20d_market_adjusted_return', 'factor_dim': 10, 'embedding_dim': 768, 'news_dim': 64, 'hidden_dim': 128, 'lookback_window': 30, 'kernel_size': 3, 'dilations': [1, 2, 4, 8], 'dropout': 0.1, 'split': {'train_start': '2018-01-01', 'train_end': '2020-12-31', 'valid_start': '2021-01-01', 'valid_end': '2021-12-31', 'test_start': '2022-01-01', 'test_end': '2023-12-31'}, 'train_config': {'batch_size': 8, 'max_epochs': 50, 'learning_rate': 0.001, 'weight_decay': 0.0001, 'early_stopping_patience': 5, 'grad_clip_norm': 1.0, 'num_workers': 0, 'device': None, 'seed': 42}, '_wandb': {}}
+2026-05-14 11:05:33,020 INFO    MainThread:23033 [wandb_init.py:init():898] starting backend
+2026-05-14 11:05:33,271 INFO    MainThread:23033 [wandb_init.py:init():913] sending inform_init request
+2026-05-14 11:05:36,326 INFO    MainThread:23033 [wandb_init.py:init():918] backend started and connected
+2026-05-14 11:05:36,350 INFO    MainThread:23033 [wandb_init.py:init():988] updated telemetry
+2026-05-14 11:05:36,357 INFO    MainThread:23033 [wandb_init.py:init():1011] communicating run to backend with 90.0 second timeout
+2026-05-14 11:05:38,362 INFO    MainThread:23033 [wandb_init.py:init():1056] starting run threads in backend
+2026-05-14 11:05:38,565 INFO    MainThread:23033 [wandb_run.py:_console_start():2554] atexit reg
+2026-05-14 11:05:38,565 INFO    MainThread:23033 [wandb_run.py:_redirect():2403] redirect: wrap_raw
+2026-05-14 11:05:38,565 INFO    MainThread:23033 [wandb_run.py:_redirect():2472] Wrapping output streams.
+2026-05-14 11:05:38,565 INFO    MainThread:23033 [wandb_run.py:_redirect():2495] Redirects installed.
+2026-05-14 11:05:38,571 INFO    MainThread:23033 [wandb_init.py:init():1094] run started, returning control to user process
+2026-05-14 11:18:38,470 INFO    MainThread:23033 [wandb_run.py:_finish():2321] finishing run zywoooooo-hong-kong-university-of-science-and-technology/news-alpha-z/76judbuu
+2026-05-14 11:18:38,470 INFO    MainThread:23033 [wandb_run.py:_atexit_cleanup():2520] got exitcode: 0
+2026-05-14 11:18:38,470 INFO    MainThread:23033 [wandb_run.py:_restore():2502] restore
+2026-05-14 11:18:38,470 INFO    MainThread:23033 [wandb_run.py:_restore():2508] restore done
+2026-05-14 11:18:41,793 INFO    MainThread:23033 [wandb_run.py:_footer_sync_info():3889] logging synced files

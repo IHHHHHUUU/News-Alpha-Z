@@ -73,11 +73,12 @@ def generate_standard_plots(
     factor_frame: pd.DataFrame,
     output_dir: str | Path,
     return_col: str = "future_20d_market_adjusted_return",
+    rebalance_every: int | None = None,
 ) -> dict[str, Path]:
     output_dir = Path(output_dir)
-    ic = compute_ic_by_date(factor_frame, return_col=return_col)
-    deciles = decile_returns(factor_frame, return_col=return_col)
-    ls = long_short_returns(factor_frame, return_col=return_col)
+    ic = compute_ic_by_date(factor_frame, return_col=return_col, rebalance_every=rebalance_every)
+    deciles = decile_returns(factor_frame, return_col=return_col, rebalance_every=rebalance_every)
+    ls = long_short_returns(factor_frame, return_col=return_col, rebalance_every=rebalance_every)
     outputs = {
         "cumulative_long_short": output_dir / "cumulative_long_short.png",
         "rolling_60d_rankic": output_dir / "rolling_60d_rankic.png",
@@ -101,9 +102,15 @@ def main() -> None:
     parser.add_argument("--factor-table", required=True)
     parser.add_argument("--output-dir", default="data/reports/plots")
     parser.add_argument("--return-col", default="future_20d_market_adjusted_return")
+    parser.add_argument("--rebalance-every", type=int, default=20)
     args = parser.parse_args()
     frame = pd.read_parquet(args.factor_table)
-    outputs = generate_standard_plots(frame, args.output_dir, return_col=args.return_col)
+    outputs = generate_standard_plots(
+        frame,
+        args.output_dir,
+        return_col=args.return_col,
+        rebalance_every=args.rebalance_every,
+    )
     for name, path in outputs.items():
         print(f"{name}: {path}")
 
