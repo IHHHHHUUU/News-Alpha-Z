@@ -167,6 +167,7 @@ class B2SequenceStockDayDataset(torch.utils.data.Dataset):
         lookback_window: int = 30,
         has_news_col: str = "has_news",
         drop_missing_label: bool = True,
+        ticker_to_id: dict[str, int] | None = None,
     ) -> None:
         if lookback_window <= 0:
             raise ValueError("lookback_window must be positive")
@@ -177,6 +178,10 @@ class B2SequenceStockDayDataset(torch.utils.data.Dataset):
         self.label_col = str(label_col)
         self.has_news_col = str(has_news_col)
         self.lookback_window = int(lookback_window)
+        self.ticker_to_id = {
+            str(ticker).upper().strip(): int(ticker_id)
+            for ticker, ticker_id in (ticker_to_id or {}).items()
+        }
 
         history = _normalize_frame(history_frame)
         samples = _normalize_frame(sample_frame)
@@ -244,9 +249,11 @@ class B2SequenceStockDayDataset(torch.utils.data.Dataset):
         history = self._history_by_ticker[ticker]
         start = pos + 1 - self.lookback_window
         end = pos + 1
+        ticker_id = self.ticker_to_id.get(ticker, 0)
         return {
             "factor_seq": torch.from_numpy(history.factors[start:end]),
             "news_seq": torch.from_numpy(history.embeddings[start:end]),
+            "ticker_id_seq": torch.full((self.lookback_window,), ticker_id, dtype=torch.long),
             "sequence_mask": torch.ones(self.lookback_window, dtype=torch.bool),
             "label": self.labels[idx],
             "has_news": self.has_news[idx],
@@ -267,6 +274,7 @@ class B3SequenceStockDayDataset(B2SequenceStockDayDataset):
         max_chunks_per_stock_day: int = 64,
         has_news_col: str = "has_news",
         drop_missing_label: bool = True,
+        ticker_to_id: dict[str, int] | None = None,
     ) -> None:
         self.chunk_index = chunk_index
         self.max_chunks_per_stock_day = int(max_chunks_per_stock_day)
@@ -280,6 +288,7 @@ class B3SequenceStockDayDataset(B2SequenceStockDayDataset):
             lookback_window=lookback_window,
             has_news_col=has_news_col,
             drop_missing_label=drop_missing_label,
+            ticker_to_id=ticker_to_id,
         )
 
     @lru_cache(maxsize=20_000)
@@ -321,6 +330,8 @@ class B3SequenceStockDayDataset(B2SequenceStockDayDataset):
         history = self._history_by_ticker[ticker]
         start = pos + 1 - self.lookback_window
         end = pos + 1
+        ticker_id = self.ticker_to_id.get(ticker, 0)
+        ticker_id_seq = torch.full((self.lookback_window,), ticker_id, dtype=torch.long)
         if self.chunk_index.stockday_id_by_key is not None:
             stockday_ids = np.zeros(self.lookback_window, dtype=np.int64)
             for day_idx, date_value in enumerate(history.dates[start:end]):
@@ -328,6 +339,7 @@ class B3SequenceStockDayDataset(B2SequenceStockDayDataset):
             return {
                 "factor_seq": torch.from_numpy(history.factors[start:end]),
                 "stockday_id_seq": torch.from_numpy(stockday_ids),
+                "ticker_id_seq": ticker_id_seq,
                 "sequence_mask": torch.ones(self.lookback_window, dtype=torch.bool),
                 "label": self.labels[idx],
                 "has_news": self.has_news[idx],
@@ -346,6 +358,7 @@ class B3SequenceStockDayDataset(B2SequenceStockDayDataset):
             "factor_seq": torch.from_numpy(history.factors[start:end]),
             "chunk_seq": torch.from_numpy(chunk_seq),
             "chunk_mask_seq": torch.from_numpy(chunk_mask),
+            "ticker_id_seq": ticker_id_seq,
             "sequence_mask": torch.ones(self.lookback_window, dtype=torch.bool),
             "label": self.labels[idx],
             "has_news": self.has_news[idx],

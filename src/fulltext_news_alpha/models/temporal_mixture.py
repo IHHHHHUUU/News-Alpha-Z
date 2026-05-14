@@ -58,6 +58,7 @@ class NewsSequenceEncoder(nn.Module):
         dropout: float = 0.1,
         chunk_index: Any | None = None,
         max_chunks_per_stock_day: int = 64,
+        num_tickers: int | None = None,
     ) -> None:
         super().__init__()
         if news_pooling not in {"b2", "b3"}:
@@ -71,6 +72,7 @@ class NewsSequenceEncoder(nn.Module):
                 chunk_dim=self.embedding_dim,
                 stock_dim=int(factor_dim),
                 hidden_dim=hidden_dim,
+                num_tickers=num_tickers,
             )
             if news_pooling == "b3"
             else None
@@ -139,9 +141,19 @@ class NewsSequenceEncoder(nn.Module):
         flat_chunks = chunk_seq.reshape(batch_size * seq_len, max_chunks, chunk_dim)
         flat_mask = chunk_mask_seq.reshape(batch_size * seq_len, max_chunks)
         flat_stock = factor_seq.reshape(batch_size * seq_len, factor_seq.shape[-1])
+        flat_ticker_ids = (
+            batch["ticker_id_seq"].reshape(batch_size * seq_len)
+            if "ticker_id_seq" in batch
+            else None
+        )
         if self.attention_pooler is None:
             raise RuntimeError("attention_pooler is required for B3 news pooling")
-        pooled, weights, entropy = self.attention_pooler(flat_chunks, flat_stock, mask=flat_mask)
+        pooled, weights, entropy = self.attention_pooler(
+            flat_chunks,
+            flat_stock,
+            mask=flat_mask,
+            ticker_ids=flat_ticker_ids,
+        )
         return {
             "pooled_news_seq": pooled.reshape(batch_size, seq_len, chunk_dim),
             "attention_weights_seq": weights.reshape(batch_size, seq_len, max_chunks),
@@ -178,6 +190,7 @@ class TemporalMixtureModel(nn.Module):
         dropout: float = 0.1,
         chunk_index: Any | None = None,
         max_chunks_per_stock_day: int = 64,
+        num_tickers: int | None = None,
     ) -> None:
         super().__init__()
         self.factor_encoder = FactorSequenceEncoder(
@@ -199,6 +212,7 @@ class TemporalMixtureModel(nn.Module):
             dropout=dropout,
             chunk_index=chunk_index,
             max_chunks_per_stock_day=max_chunks_per_stock_day,
+            num_tickers=num_tickers,
         )
         self.factor_branch = FactorBranch(factor_dim=hidden_dim, hidden_dim=hidden_dim, dropout=dropout)
         self.fusion_branch = FusionBranch(
@@ -272,6 +286,7 @@ class TemporalFusionModel(nn.Module):
         dropout: float = 0.1,
         chunk_index: Any | None = None,
         max_chunks_per_stock_day: int = 64,
+        num_tickers: int | None = None,
     ) -> None:
         super().__init__()
         self.factor_encoder = FactorSequenceEncoder(
@@ -293,6 +308,7 @@ class TemporalFusionModel(nn.Module):
             dropout=dropout,
             chunk_index=chunk_index,
             max_chunks_per_stock_day=max_chunks_per_stock_day,
+            num_tickers=num_tickers,
         )
         self.fusion_branch = FusionBranch(
             factor_dim=hidden_dim,

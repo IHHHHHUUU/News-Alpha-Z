@@ -164,6 +164,7 @@ def _build_dataset(
     drop_missing_label: bool,
     chunk_index: ChunkEmbeddingIndex | None,
     max_chunks_per_stock_day: int,
+    ticker_to_id: dict[str, int] | None,
 ) -> B2SequenceStockDayDataset | B3SequenceStockDayDataset:
     if news_pooling == "b2":
         return B2SequenceStockDayDataset(
@@ -174,6 +175,7 @@ def _build_dataset(
             label_col=label_col,
             lookback_window=lookback_window,
             drop_missing_label=drop_missing_label,
+            ticker_to_id=ticker_to_id,
         )
     if chunk_index is None:
         raise ValueError("chunk_index is required for B3 sequence datasets")
@@ -186,6 +188,7 @@ def _build_dataset(
         lookback_window=lookback_window,
         max_chunks_per_stock_day=max_chunks_per_stock_day,
         drop_missing_label=drop_missing_label,
+        ticker_to_id=ticker_to_id,
     )
 
 
@@ -205,10 +208,13 @@ def _prepare_data(
     list[str],
     int,
     ChunkEmbeddingIndex | None,
+    dict[str, int],
 ]:
     panel = load_training_panel(panel_path)
     if label_col not in panel.columns:
         raise KeyError(f"label_col '{label_col}' not in panel columns")
+    tickers = sorted(panel["ticker"].astype(str).str.upper().str.strip().unique())
+    ticker_to_id = {ticker: idx for idx, ticker in enumerate(tickers, start=1)}
     factor_cols = infer_factor_columns(panel)
     embedding_cols: list[str] = []
     chunk_index: ChunkEmbeddingIndex | None = None
@@ -227,7 +233,7 @@ def _prepare_data(
     else:
         raise ValueError("news_pooling must be 'b2' or 'b3'")
     splits = split_by_date(panel, split)
-    return panel, splits, factor_cols, embedding_cols, embedding_dim, chunk_index
+    return panel, splits, factor_cols, embedding_cols, embedding_dim, chunk_index, ticker_to_id
 
 
 def _build_split_datasets(
@@ -240,6 +246,7 @@ def _build_split_datasets(
     lookback_window: int,
     chunk_index: ChunkEmbeddingIndex | None,
     max_chunks_per_stock_day: int,
+    ticker_to_id: dict[str, int] | None,
 ) -> dict[str, B2SequenceStockDayDataset | B3SequenceStockDayDataset]:
     return {
         name: _build_dataset(
@@ -253,6 +260,7 @@ def _build_split_datasets(
             drop_missing_label=(name != "test"),
             chunk_index=chunk_index,
             max_chunks_per_stock_day=max_chunks_per_stock_day,
+            ticker_to_id=ticker_to_id,
         )
         for name, frame in splits.items()
     }
@@ -333,7 +341,7 @@ def train_temporal_b4(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     set_global_seed(config.seed)
-    panel, splits, factor_cols, embedding_cols, embedding_dim, chunk_index = _prepare_data(
+    panel, splits, factor_cols, embedding_cols, embedding_dim, chunk_index, ticker_to_id = _prepare_data(
         news_pooling=news_pooling,
         panel_path=panel_path,
         split=split,
@@ -353,6 +361,7 @@ def train_temporal_b4(
         lookback_window=lookback_window,
         chunk_index=chunk_index,
         max_chunks_per_stock_day=max_chunks_per_stock_day,
+        ticker_to_id=ticker_to_id,
     )
     loaders = _build_loaders(datasets, config)
     model = TemporalMixtureModel(
@@ -367,6 +376,7 @@ def train_temporal_b4(
         dropout=dropout,
         chunk_index=chunk_index,
         max_chunks_per_stock_day=max_chunks_per_stock_day,
+        num_tickers=len(ticker_to_id),
     )
     run = init_wandb_run(
         wandb_config or WandbConfig(),
@@ -375,6 +385,7 @@ def train_temporal_b4(
             "label_col": label_col,
             "factor_dim": len(factor_cols),
             "embedding_dim": embedding_dim,
+            "num_tickers": len(ticker_to_id),
             "news_dim": news_dim,
             "hidden_dim": hidden_dim,
             "lookback_window": lookback_window,
@@ -446,6 +457,7 @@ def train_temporal_b4(
             "embedding_cols": embedding_cols,
             "label_col": label_col,
             "news_pooling": news_pooling,
+            "num_tickers": len(ticker_to_id),
         },
     )
     metadata = {
@@ -453,6 +465,7 @@ def train_temporal_b4(
         "label_col": label_col,
         "factor_cols": factor_cols,
         "embedding_dim": embedding_dim,
+        "num_tickers": len(ticker_to_id),
         "news_dim": news_dim,
         "hidden_dim": hidden_dim,
         "bottleneck_hidden_dim": bottleneck_hidden_dim,
@@ -540,7 +553,7 @@ def train_temporal_b5(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     set_global_seed(config.seed)
-    panel, splits, factor_cols, embedding_cols, embedding_dim, chunk_index = _prepare_data(
+    panel, splits, factor_cols, embedding_cols, embedding_dim, chunk_index, ticker_to_id = _prepare_data(
         news_pooling=news_pooling,
         panel_path=panel_path,
         split=split,
@@ -560,6 +573,7 @@ def train_temporal_b5(
         lookback_window=lookback_window,
         chunk_index=chunk_index,
         max_chunks_per_stock_day=max_chunks_per_stock_day,
+        ticker_to_id=ticker_to_id,
     )
     loaders = _build_loaders(datasets, config)
     fusion_frames = {
@@ -578,6 +592,7 @@ def train_temporal_b5(
             drop_missing_label=False,
             chunk_index=chunk_index,
             max_chunks_per_stock_day=max_chunks_per_stock_day,
+            ticker_to_id=ticker_to_id,
         )
         for name, frame in fusion_frames.items()
     }
@@ -590,6 +605,7 @@ def train_temporal_b5(
             "label_col": label_col,
             "factor_dim": len(factor_cols),
             "embedding_dim": embedding_dim,
+            "num_tickers": len(ticker_to_id),
             "news_dim": news_dim,
             "hidden_dim": hidden_dim,
             "gate_temperature": gate_temperature,
@@ -630,6 +646,9 @@ def train_temporal_b5(
         kernel_size=kernel_size,
         dilations=dilations,
         dropout=dropout,
+        chunk_index=chunk_index,
+        max_chunks_per_stock_day=max_chunks_per_stock_day,
+        num_tickers=len(ticker_to_id),
     )
     stage2_history = train_loop(
         model=fusion_model,
@@ -766,6 +785,7 @@ def train_temporal_b5(
             "embedding_dim": embedding_dim,
             "news_dim": news_dim,
             "news_pooling": news_pooling,
+            "num_tickers": len(ticker_to_id),
         },
     )
     save_checkpoint(
@@ -791,6 +811,7 @@ def train_temporal_b5(
         "label_col": label_col,
         "factor_cols": factor_cols,
         "embedding_dim": embedding_dim,
+        "num_tickers": len(ticker_to_id),
         "news_dim": news_dim,
         "hidden_dim": hidden_dim,
         "bottleneck_hidden_dim": bottleneck_hidden_dim,
