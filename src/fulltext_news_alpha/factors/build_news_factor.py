@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 
@@ -41,15 +42,23 @@ def build_full_text_news_alpha(
         out["chunk_count"] = 0
 
     if "attention_entropy" not in out.columns and attention is not None and "attention_entropy" in attention.columns:
-        attn = _normalize_keys(attention[["date", "ticker", "attention_entropy"]])
+        attn = _normalize_keys(cast(pd.DataFrame, attention[["date", "ticker", "attention_entropy"]]))
         out = out.merge(attn, on=["date", "ticker"], how="left")
     if "attention_entropy" not in out.columns:
         out["attention_entropy"] = pd.NA
 
     if label_frame is not None and label_col is not None:
-        labels = _normalize_keys(label_frame[["date", "ticker", label_col]])
+        if label_col not in label_frame.columns:
+            raise KeyError(f"Panel is missing requested label column: {label_col}")
+        labels = _normalize_keys(cast(pd.DataFrame, label_frame[["date", "ticker", label_col]]))
         labels = labels.drop_duplicates(subset=["date", "ticker"])
         out = out.merge(labels, on=["date", "ticker"], how="left", validate="one_to_one")
+        label_coverage = float(out[label_col].notna().mean()) if len(out) else 0.0
+        if label_coverage < 0.95:
+            print(
+                f"warning: label coverage for {label_col} after merge is {label_coverage:.2%}",
+                flush=True,
+            )
 
     out = standardize_by_date(
         out,
@@ -71,7 +80,7 @@ def build_full_text_news_alpha(
     ]
     if label_col is not None and label_col in out.columns:
         columns.append(label_col)
-    return out[columns].sort_values(by=["date", "ticker"]).reset_index(drop=True)
+    return out[columns].sort_values(by=["date", "ticker"]).reset_index(drop=True)  # type: ignore[call-overload]
 
 
 def main() -> None:

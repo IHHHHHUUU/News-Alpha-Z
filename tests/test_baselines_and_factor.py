@@ -91,3 +91,35 @@ def test_full_text_news_alpha_can_merge_panel_label_and_coverage() -> None:
     assert factor["chunk_count"].iloc[0] == 3
     assert factor["attention_entropy"].iloc[0] == 0.7
     assert factor["future_20d_market_adjusted_return"].iloc[0] == 0.12
+
+
+def test_full_text_news_alpha_missing_panel_label_raises_keyerror() -> None:
+    predictions = pd.DataFrame(
+        {
+            "date": ["2024-01-02"],
+            "ticker": ["A"],
+            "factor_only_pred": [0.0],
+            "fusion_pred": [1.0],
+            "gate_news_prob": [0.5],
+            "mixed_pred": [0.5],
+        }
+    )
+    panel = pd.DataFrame(
+        {
+            "date": ["2024-01-02"],
+            "ticker": ["A"],
+            "news_count": [2],
+            "chunk_count": [3],
+        }
+    )
+    try:
+        build_full_text_news_alpha(
+            predictions,
+            coverage=panel,
+            label_frame=panel,
+            label_col="future_20d_market_adjusted_return",
+        )
+    except KeyError as exc:
+        assert "future_20d_market_adjusted_return" in str(exc)
+    else:
+        raise AssertionError("Expected KeyError for missing label column")

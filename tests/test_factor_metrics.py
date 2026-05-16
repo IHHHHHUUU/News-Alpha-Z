@@ -3,7 +3,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from fulltext_news_alpha.evaluation.ic_metrics import compute_ic_by_date, summarize_ic
+from fulltext_news_alpha.evaluation.ic_metrics import (
+    compute_daily_ic_diagnostics,
+    compute_ic_by_date,
+    summarize_ic,
+)
+from fulltext_news_alpha.evaluation.plots import compute_factor_coverage
 from fulltext_news_alpha.evaluation.portfolio_backtest import filter_rebalance_dates, long_short_returns
 from fulltext_news_alpha.factors.factor_standardization import standardize_by_date
 
@@ -41,6 +46,42 @@ def test_ic_rankic_and_summary_are_computed() -> None:
     summary = summarize_ic(ic)
     assert ic["RankIC"].min() > 0.99
     assert summary["RankIC"] > 0.99
+    assert summary["RankIC_count"] == 2
+    assert summary["RankIC_nan_count"] == 0
+    assert summary["RankIC_zero_count"] == 0
+
+
+def test_factor_coverage_counts_valid_factor_and_return_rows() -> None:
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02"] * 10 + ["2024-01-03"] * 5,
+            "ticker": [f"T{i}" for i in range(10)] + [f"U{i}" for i in range(5)],
+            "FullTextNewsAlpha_zscore": [1.0] * 6 + [np.nan] * 4 + [1.0] * 5,
+            "future_20d_market_adjusted_return": [1.0] * 8 + [np.nan] * 2 + [1.0] * 5,
+        }
+    )
+    coverage = compute_factor_coverage(frame)
+    by_date = dict(zip(coverage["date"], coverage["coverage"], strict=True))
+    assert np.isclose(by_date["2024-01-02"], 0.6)
+    assert np.isclose(by_date["2024-01-03"], 1.0)
+
+
+def test_daily_rankic_diagnostics_capture_degenerate_dates() -> None:
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02"] * 5 + ["2024-01-03"] * 5 + ["2024-01-04"] * 5,
+            "ticker": [f"A{i}" for i in range(5)] + [f"B{i}" for i in range(5)] + [f"C{i}" for i in range(5)],
+            "FullTextNewsAlpha_zscore": [0, 1, 2, 3, 4] + [1, 1, 1, 1, 1] + [0, 1, 2, 3, 4],
+            "future_20d_market_adjusted_return": [0, 1, 2, 3, 4] + [0, 1, 2, 3, 4] + [0, 1, np.nan, np.nan, np.nan],
+        }
+    )
+    diagnostics = compute_daily_ic_diagnostics(frame)
+    by_date = {str(row["date"]): row for row in diagnostics.to_dict(orient="records")}
+    assert np.isclose(by_date["2024-01-02"]["RankIC"], 1.0)
+    assert np.isnan(by_date["2024-01-03"]["RankIC"])
+    assert by_date["2024-01-03"]["factor_nunique"] == 1
+    assert by_date["2024-01-04"]["valid_count"] == 2
+    assert by_date["2024-01-04"]["return_nunique"] == 2
 
 
 def test_long_short_returns_are_positive_for_monotonic_factor() -> None:

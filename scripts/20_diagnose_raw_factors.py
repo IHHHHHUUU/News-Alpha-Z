@@ -1,11 +1,11 @@
-"""CLI entry: train the B3+B5 TCN baseline."""
+"""CLI entry: diagnose raw price-volume single factors."""
 
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from fulltext_news_alpha.training.train_b3_b5 import main
+from fulltext_news_alpha.diagnostics.raw_factor_diagnostics import main
 
 
 if __name__ == "__main__":

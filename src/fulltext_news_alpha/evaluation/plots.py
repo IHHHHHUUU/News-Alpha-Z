@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from fulltext_news_alpha.evaluation.ic_metrics import compute_ic_by_date, rolling_rankic
@@ -69,28 +70,80 @@ def plot_attention_entropy(frame: pd.DataFrame, output: str | Path) -> None:
     _save(fig, Path(output))
 
 
+def compute_factor_coverage(
+    frame: pd.DataFrame,
+    factor_col: str = "FullTextNewsAlpha_zscore",
+    return_col: str = "future_20d_market_adjusted_return",
+    date_col: str = "date",
+    as_ratio: bool = True,
+) -> pd.DataFrame:
+    """Compute daily factor coverage from valid factor/return rows."""
+
+    required = {date_col, factor_col, return_col}
+    missing = required - set(frame.columns)
+    if missing:
+        raise KeyError(f"Missing columns for factor coverage: {sorted(missing)}")
+    rows: list[dict[str, object]] = []
+    for date, group in frame.groupby(date_col):
+        valid_count = int(
+            group[[factor_col, return_col]]
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+            .shape[0]
+        )
+        row_count = int(len(group))
+        coverage = valid_count / row_count if as_ratio and row_count else valid_count
+        rows.append(
+            {
+                "date": date,
+                "coverage": float(coverage),
+                "valid_count": valid_count,
+                "row_count": row_count,
+            }
+        )
+    return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
+
+
 def generate_standard_plots(
     factor_frame: pd.DataFrame,
     output_dir: str | Path,
+    factor_col: str = "FullTextNewsAlpha_zscore",
     return_col: str = "future_20d_market_adjusted_return",
     rebalance_every: int | None = None,
 ) -> dict[str, Path]:
     output_dir = Path(output_dir)
-    ic = compute_ic_by_date(factor_frame, return_col=return_col, rebalance_every=rebalance_every)
-    deciles = decile_returns(factor_frame, return_col=return_col, rebalance_every=rebalance_every)
-    ls = long_short_returns(factor_frame, return_col=return_col, rebalance_every=rebalance_every)
+    ic = compute_ic_by_date(
+        factor_frame,
+        factor_col=factor_col,
+        return_col=return_col,
+        rebalance_every=rebalance_every,
+    )
+    deciles = decile_returns(
+        factor_frame,
+        factor_col=factor_col,
+        return_col=return_col,
+        rebalance_every=rebalance_every,
+    )
+    ls = long_short_returns(
+        factor_frame,
+        factor_col=factor_col,
+        return_col=return_col,
+        rebalance_every=rebalance_every,
+    )
     outputs = {
         "cumulative_long_short": output_dir / "cumulative_long_short.png",
         "rolling_60d_rankic": output_dir / "rolling_60d_rankic.png",
         "decile_returns": output_dir / "decile_returns.png",
         "coverage": output_dir / "coverage.png",
-        "average_gate_news_prob": output_dir / "average_gate_news_prob.png",
     }
     plot_cumulative_long_short(ls, outputs["cumulative_long_short"])
     plot_rolling_rankic(ic, outputs["rolling_60d_rankic"])
     plot_decile_bar(deciles, outputs["decile_returns"])
-    plot_series_by_date(factor_frame.assign(coverage=1), "coverage", outputs["coverage"], "Factor Coverage")
-    plot_series_by_date(factor_frame, "gate_news_prob", outputs["average_gate_news_prob"], "Average Gate News Probability")
+    coverage = compute_factor_coverage(factor_frame, factor_col=factor_col, return_col=return_col)
+    plot_series_by_date(coverage, "coverage", outputs["coverage"], "Factor Coverage")
+    if "gate_news_prob" in factor_frame:
+        outputs["average_gate_news_prob"] = output_dir / "average_gate_news_prob.png"
+        plot_series_by_date(factor_frame, "gate_news_prob", outputs["average_gate_news_prob"], "Average Gate News Probability")
     if "attention_entropy" in factor_frame:
         outputs["attention_entropy"] = output_dir / "attention_entropy.png"
         plot_attention_entropy(factor_frame, outputs["attention_entropy"])
@@ -108,6 +161,7 @@ def main() -> None:
     outputs = generate_standard_plots(
         frame,
         args.output_dir,
+        factor_col="FullTextNewsAlpha_zscore",
         return_col=args.return_col,
         rebalance_every=args.rebalance_every,
     )
