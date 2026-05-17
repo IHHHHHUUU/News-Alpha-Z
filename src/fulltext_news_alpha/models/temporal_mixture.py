@@ -231,7 +231,8 @@ class TemporalMixtureModel(nn.Module):
     def forward(self, batch: dict[str, Any]) -> dict[str, Any]:
         factor_state = self.factor_encoder(batch["factor_seq"], sequence_mask=batch.get("sequence_mask"))
         news_outputs = self.news_encoder(batch)
-        news_state = news_outputs["full_text_news_repr"]
+        news_state = torch.nan_to_num(news_outputs["full_text_news_repr"], nan=0.0, posinf=0.0, neginf=0.0)
+        factor_state = torch.nan_to_num(factor_state, nan=0.0, posinf=0.0, neginf=0.0)
         factor_only_pred = self.factor_branch(factor_state)
         fusion_pred_raw = self.fusion_branch(factor_state, news_state)
         gate_prob_raw = self.gate(factor_state, news_state)
@@ -267,6 +268,7 @@ class TemporalFactorModel(nn.Module):
 
     def forward(self, batch: dict[str, Any]) -> dict[str, Any]:
         factor_state = self.factor_encoder(batch["factor_seq"], sequence_mask=batch.get("sequence_mask"))
+        factor_state = torch.nan_to_num(factor_state, nan=0.0, posinf=0.0, neginf=0.0)
         return {"factor_only_pred": self.factor_branch(factor_state), "factor_state": factor_state}
 
 
@@ -320,7 +322,8 @@ class TemporalFusionModel(nn.Module):
     def forward(self, batch: dict[str, Any]) -> dict[str, Any]:
         factor_state = self.factor_encoder(batch["factor_seq"], sequence_mask=batch.get("sequence_mask"))
         news_outputs = self.news_encoder(batch)
-        news_state = news_outputs["full_text_news_repr"]
+        news_state = torch.nan_to_num(news_outputs["full_text_news_repr"], nan=0.0, posinf=0.0, neginf=0.0)
+        factor_state = torch.nan_to_num(factor_state, nan=0.0, posinf=0.0, neginf=0.0)
         outputs = {
             "fusion_pred": self.fusion_branch(factor_state, news_state),
             "full_text_news_repr": news_state,
